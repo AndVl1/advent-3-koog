@@ -1,6 +1,14 @@
 ktor:
     application:
         modules:
-            - ru.andvl.ApplicationKt.module
+            - ru.andvl.chatter.backend.ApplicationKt.module
     deployment:
-        port: 8080
+        port: 8081
+
+#koog:
+#  openai:
+#    api_key: ${OPENAI_API_KEY:-dummy-key}
+#  google:
+#    api_key: ${GOOGLE_API_KEY}
+#  openrouter:
+#    api_key: ${OPENROUTER_API_KEY}

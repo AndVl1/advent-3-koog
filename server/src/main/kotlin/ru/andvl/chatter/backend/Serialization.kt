@@ -1,4 +1,4 @@
-package ru.andvl.ru.andvl.chatter.backend
+package ru.andvl.chatter.backend
 
 import io.ktor.server.application.*
 import io.ktor.server.response.*

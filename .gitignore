@@ -36,3 +36,6 @@ out/
 .vscode/
 
 /config.properties
+/.env
+config.properties
+/server/gradle.properties

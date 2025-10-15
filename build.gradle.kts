@@ -7,6 +7,6 @@ plugins {
 }
 
 subprojects {
-    group = "ru.andvl"
+
     version = "0.0.1"
 }

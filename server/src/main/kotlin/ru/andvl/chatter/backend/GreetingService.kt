@@ -1,4 +1,4 @@
-package ru.andvl.ru.andvl.chatter.backend
+package ru.andvl.chatter.backend
 
 fun interface GreetingService {
     fun sayHello(): String

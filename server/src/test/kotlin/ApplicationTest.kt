@@ -11,8 +11,8 @@ import kotlinx.rpc.krpc.ktor.client.rpc
 import kotlinx.rpc.krpc.ktor.client.rpcConfig
 import kotlinx.rpc.krpc.serialization.json.json
 import kotlinx.rpc.withService
-import ru.andvl.ru.andvl.chatter.backend.configureFrameworks
-import ru.andvl.ru.andvl.chatter.backend.module
+import ru.andvl.chatter.backend.configureFrameworks
+import ru.andvl.chatter.backend.module
 
 class ApplicationTest {
 

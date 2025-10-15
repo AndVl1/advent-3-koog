@@ -21,6 +21,23 @@ dependencies {
     implementation(libs.ktor.server.netty)
     implementation(libs.logback.classic)
     implementation(libs.ktor.server.config.yaml)
+    implementation("io.github.cdimascio:dotenv-kotlin:6.4.1")
     testImplementation(libs.ktor.server.test.host)
     testImplementation(libs.kotlin.test.junit)
+}
+
+tasks {
+    processResources {
+        from("../config.properties") {
+            into("config.properties")
+        }
+    }
+
+    named<JavaExec>("run") {
+        environment("GOOGLE_API_KEY", System.getenv("GOOGLE_API_KEY") ?: project.findProperty("GOOGLE_API_KEY") ?: "")
+        environment("OPENROUTER_API_KEY", System.getenv("OPENROUTER_API_KEY") ?: project.findProperty("OPENROUTER_API_KEY") ?: "")
+        // Также передаем как системные свойства
+        systemProperty("GOOGLE_API_KEY", project.findProperty("GOOGLE_API_KEY") ?: "")
+        systemProperty("OPENROUTER_API_KEY", project.findProperty("OPENROUTER_API_KEY") ?: "")
+    }
 }
