@@ -68,7 +68,7 @@ fun Application.configureFrameworks() {
                     val koogService = KoogServiceFactory.createFromEnv()
                     val response = koogService.chat(userInput, this)
 
-                    log.info("AI response generated successfully")
+                    log.info("AI response generated successfully: $response")
                     call.respond(response)
                 } catch (e: Exception) {
                     log.error("Error processing AI request", e)
@@ -97,7 +97,6 @@ fun Application.configureFrameworks() {
                     // Create ChatRequest
                     val chatRequest = ChatRequest(
                         message = request.message,
-                        systemPrompt = request.systemPrompt,
                         history = history,
                         maxHistoryLength = request.maxHistoryLength
                     )

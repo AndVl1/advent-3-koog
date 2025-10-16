@@ -3,6 +3,7 @@ package ru.andvl.chatter.backend.dto
 import kotlinx.serialization.Serializable
 import ai.koog.prompt.message.Message
 import ru.andvl.chatter.koog.model.ChatResponse
+import ru.andvl.chatter.koog.model.StructuredResponse
 
 /**
  * Request DTO for chat with context
@@ -10,7 +11,6 @@ import ru.andvl.chatter.koog.model.ChatResponse
 @Serializable
 data class ChatRequestDto(
     val message: String,
-    val systemPrompt: String? = null,
     val history: List<MessageDto> = emptyList(),
     val maxHistoryLength: Int = 10,
     val provider: String? = null // "google" or "openrouter"
@@ -30,7 +30,7 @@ data class MessageDto(
  */
 @Serializable
 data class ChatResponseDto(
-    val response: String,
+    val response: StructuredResponse,
     val model: String? = null,
     val usage: TokenUsageDto? = null
 )

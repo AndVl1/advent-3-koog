@@ -32,7 +32,8 @@ import ru.andvl.chatter.koog.model.TokenUsage
 class KoogService {
 
     private val defaultSystemPrompt =
-        "You are a helpful AI assistant. Provide clear, accurate, and thoughtful responses."
+        "You are a helpful AI assistant. Provide clear, accurate, and thoughtful responses." +
+                "Always answer in given format"
 
     /**
      * Chat with simple message (backward compatibility)
@@ -72,7 +73,6 @@ class KoogService {
                             retries = 3
                         )
                     )
-//                    .execute(prompt, OpenRouterModels.Gemini2_5Flash)
 
                 ChatResponse(
                     response = response.getOrNull()!!.structure,
