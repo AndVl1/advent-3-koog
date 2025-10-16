@@ -6,6 +6,7 @@ plugins {
 dependencies {
     implementation(project(":core"))
     implementation(libs.koog.ktor)
+    implementation(libs.koog.agents)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)

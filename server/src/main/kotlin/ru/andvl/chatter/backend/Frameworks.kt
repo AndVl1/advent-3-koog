@@ -17,6 +17,13 @@ import kotlinx.rpc.krpc.serialization.json.*
 import ru.andvl.SampleService
 import ru.andvl.SampleServiceImpl
 import ru.andvl.chatter.koog.config.KoogConfig
+import ru.andvl.chatter.koog.model.ChatRequest
+import ru.andvl.chatter.koog.model.ChatResponse
+import ru.andvl.chatter.koog.model.SimpleMessage
+import ru.andvl.chatter.backend.dto.ChatRequestDto
+import ru.andvl.chatter.backend.dto.ChatResponseDto
+import ru.andvl.chatter.backend.dto.MessageDto
+import ru.andvl.chatter.koog.service.Provider
 import java.util.Properties
 import kotlinx.serialization.Serializable
 
@@ -55,19 +62,75 @@ fun Application.configureFrameworks() {
             post("/chat") {
                 try {
                     val userInput = call.receive<String>()
-                    log.info("Received chat request: ${userInput.take(100)}...")
+                    log.info("Received simple chat request: ${userInput.take(100)}...")
 
-                    // Use KoogService from koog-service module
+                    // Use KoogService from koog-service module (pure AiAgents, no RoutingContext)
                     val koogService = KoogServiceFactory.createFromEnv()
                     val response = koogService.chat(userInput, this)
 
                     log.info("AI response generated successfully")
-                    call.respondText(response)
+                    call.respond(response)
                 } catch (e: Exception) {
                     log.error("Error processing AI request", e)
                     call.respond(
                         HttpStatusCode.InternalServerError,
                         "Error processing request: ${e.message}"
+                    )
+                }
+            }
+
+            post("/chat/context") {
+                try {
+                    val request = call.receive<ChatRequestDto>()
+                    log.info("Received context chat request: ${request.message.take(100)}...")
+
+                    val koogService = KoogServiceFactory.createFromEnv()
+
+                    // Convert DTO history to SimpleMessage objects
+                    val history = request.history.map {
+                        SimpleMessage(
+                            role = it.role.lowercase(),
+                            content = it.content
+                        )
+                    }
+
+                    // Create ChatRequest
+                    val chatRequest = ChatRequest(
+                        message = request.message,
+                        systemPrompt = request.systemPrompt,
+                        history = history,
+                        maxHistoryLength = request.maxHistoryLength
+                    )
+
+                    // Use provider if specified (pure AiAgents, no RoutingContext)
+                    val response: ChatResponse = if (request.provider != null) {
+                        val provider = when (request.provider.lowercase()) {
+                            "google" -> Provider.GOOGLE
+                            "openrouter" -> Provider.OPENROUTER
+                            else -> Provider.OPENROUTER
+                        }
+                        koogService.chatWithContext(chatRequest, provider, this)
+                    } else {
+                        koogService.chat(chatRequest, this)
+                    }
+
+                    log.info("AI response with context generated successfully")
+                    call.respond(ChatResponseDto(
+                        response = response.response,
+                        model = response.model,
+                        usage = response.usage?.let {
+                            ru.andvl.chatter.backend.dto.TokenUsageDto(
+                                promptTokens = it.promptTokens,
+                                completionTokens = it.completionTokens,
+                                totalTokens = it.totalTokens
+                            )
+                        }
+                    ))
+                } catch (e: Exception) {
+                    log.error("Error processing AI context request", e)
+                    call.respond(
+                        HttpStatusCode.InternalServerError,
+                        mapOf("error" to (e.message ?: "Unknown error"))
                     )
                 }
             }
