@@ -39,3 +39,4 @@ out/
 /.env
 config.properties
 /server/gradle.properties
+/tools/docs/
