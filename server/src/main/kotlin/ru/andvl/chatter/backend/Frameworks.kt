@@ -1,21 +1,31 @@
 package ru.andvl.chatter.backend
 
 import ai.koog.ktor.Koog
-import ai.koog.ktor.aiAgent
-import ai.koog.prompt.executor.clients.google.GoogleModels
-import ai.koog.prompt.executor.clients.openrouter.OpenRouterModels
+import ru.andvl.chatter.koog.service.KoogService
+import ru.andvl.chatter.koog.service.KoogServiceFactory
 import io.ktor.server.application.*
 import io.ktor.server.plugins.di.*
+import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
 import kotlinx.rpc.krpc.ktor.server.Krpc
 import kotlinx.rpc.krpc.ktor.server.rpc
 import kotlinx.rpc.krpc.serialization.json.*
 import ru.andvl.SampleService
 import ru.andvl.SampleServiceImpl
+import ru.andvl.chatter.koog.config.KoogConfig
 import java.util.Properties
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class HealthStatus(
+    val status: String,
+    val message: String,
+    val providers: Map<String, Boolean>
+)
 
 fun Application.configureFrameworks() {
     // Теперь API ключи загружаются из .env через Application.main и устанавливаются как системные свойства
@@ -26,8 +36,11 @@ fun Application.configureFrameworks() {
     log.info("Google API key: ${googleApiKey?.take(10)}...")
     log.info("OpenRouter API key: ${openRouterApiKey?.take(10)}...")
 
-    dependencies {
+  dependencies {
         provide { GreetingService { "Hello, World!" } }
+    }
+    install(ContentNegotiation) {
+        json()
     }
     install(Krpc)
     install(Koog) {
@@ -42,27 +55,43 @@ fun Application.configureFrameworks() {
             post("/chat") {
                 try {
                     val userInput = call.receive<String>()
-                    log.info("Received request: $userInput")
+                    log.info("Received chat request: ${userInput.take(100)}...")
 
-                    // Проверяем наличие ключа в реальном времени
-                    val currentGoogleKey = System.getProperty("GOOGLE_API_KEY")
+                    // Use KoogService from koog-service module
+                    val koogService = KoogServiceFactory.createFromEnv()
+                    val response = koogService.chat(userInput, this)
 
-                    log.info("Current Google API key check: ${currentGoogleKey?.take(10)}...")
-
-                    if (currentGoogleKey.isNullOrEmpty()) {
-                        log.error("Google API key is not set")
-                        call.respond(HttpStatusCode.InternalServerError, "Google API key is not configured")
-                        return@post
-                    }
-
-                    val output = aiAgent(userInput, model = OpenRouterModels.Gemini2_5Flash)
-                    log.info("AI response: ${output.take(100)}...")
-                    call.respondText(output)
+                    log.info("AI response generated successfully")
+                    call.respondText(response)
                 } catch (e: Exception) {
                     log.error("Error processing AI request", e)
                     call.respond(
                         HttpStatusCode.InternalServerError,
                         "Error processing request: ${e.message}"
+                    )
+                }
+            }
+
+            // Health check endpoint for AI services
+            get("/health") {
+                try {
+                // Use KoogService to check health
+                val koogService = KoogServiceFactory.createFromEnv()
+                val serviceHealth = koogService.getHealthStatus()
+                val healthStatus = HealthStatus(
+                    status = serviceHealth["status"] as? String ?: "unknown",
+                    message = serviceHealth["message"] as? String ?: "Unknown status",
+                    providers = mapOf(
+                        "google" to true,
+                        "openrouter" to true
+                    )
+                )
+                call.respond(HttpStatusCode.OK, healthStatus)
+                } catch (e: Exception) {
+                    log.error("Error checking AI service health", e)
+                    call.respond(
+                        HttpStatusCode.InternalServerError,
+                        mapOf("status" to "error", "message" to e.message)
                     )
                 }
             }
