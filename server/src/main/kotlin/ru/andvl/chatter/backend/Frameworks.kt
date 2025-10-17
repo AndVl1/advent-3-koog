@@ -1,7 +1,6 @@
 package ru.andvl.chatter.backend
 
 import ai.koog.ktor.Koog
-import ru.andvl.chatter.koog.service.KoogService
 import ru.andvl.chatter.koog.service.KoogServiceFactory
 import io.ktor.server.application.*
 import io.ktor.server.plugins.di.*
@@ -16,15 +15,11 @@ import kotlinx.rpc.krpc.ktor.server.rpc
 import kotlinx.rpc.krpc.serialization.json.*
 import ru.andvl.SampleService
 import ru.andvl.SampleServiceImpl
-import ru.andvl.chatter.koog.config.KoogConfig
 import ru.andvl.chatter.koog.model.ChatRequest
 import ru.andvl.chatter.koog.model.ChatResponse
-import ru.andvl.chatter.koog.model.SimpleMessage
 import ru.andvl.chatter.backend.dto.ChatRequestDto
 import ru.andvl.chatter.backend.dto.ChatResponseDto
-import ru.andvl.chatter.backend.dto.MessageDto
 import ru.andvl.chatter.koog.service.Provider
-import java.util.Properties
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -87,12 +82,7 @@ fun Application.configureFrameworks() {
                     val koogService = KoogServiceFactory.createFromEnv()
 
                     // Convert DTO history to SimpleMessage objects
-                    val history = request.history.map {
-                        SimpleMessage(
-                            role = it.role.lowercase(),
-                            content = it.content
-                        )
-                    }
+                    val history = request.history
 
                     // Create ChatRequest
                     val chatRequest = ChatRequest(
@@ -102,15 +92,13 @@ fun Application.configureFrameworks() {
                     )
 
                     // Use provider if specified (pure AiAgents, no RoutingContext)
-                    val response: ChatResponse = if (request.provider != null) {
-                        val provider = when (request.provider.lowercase()) {
+                    val response: ChatResponse = run {
+                        val provider = when (request.provider?.lowercase()) {
                             "google" -> Provider.GOOGLE
                             "openrouter" -> Provider.OPENROUTER
                             else -> Provider.OPENROUTER
                         }
-                        koogService.chatWithContext(chatRequest, provider, this)
-                    } else {
-                        koogService.chat(chatRequest, this)
+                        koogService.chat(chatRequest, this, provider)
                     }
 
                     log.info("AI response with context generated successfully")

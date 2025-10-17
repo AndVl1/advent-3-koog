@@ -1,6 +1,7 @@
 package ru.andvl.chatter.koog.model
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
+import ai.koog.prompt.message.Message
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -18,7 +19,7 @@ data class SimpleMessage(
 data class ChatRequest(
     val message: String,
     val systemPrompt: String? = null,
-    val history: List<SimpleMessage> = emptyList(),
+    val history: List<Message> = emptyList(),
     val maxHistoryLength: Int = 10 // Limit history to prevent token overflow
 )
 
@@ -27,6 +28,7 @@ data class ChatRequest(
  */
 data class ChatResponse(
     val response: StructuredResponse,
+    val originalMessage: Message.Assistant?,
     val usage: TokenUsage? = null,
     val model: String? = null
 )
