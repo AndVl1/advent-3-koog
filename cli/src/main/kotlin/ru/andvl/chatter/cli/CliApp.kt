@@ -9,6 +9,7 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.cli.*
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
@@ -74,7 +75,17 @@ fun main(args: Array<String>) = runBlocking {
 @Serializable
 data class StructuredResponse(
     val title: String,
-    val message: String
+    val message: String,
+    val checklistItems: List<ChecklistItem>
+)
+
+@Serializable
+@SerialName("ChecklistItem")
+data class ChecklistItem(
+    @SerialName("point")
+    val point: String,
+    @SerialName("resolution")
+    val resolution: String?,
 )
 
 suspend fun sendMessage(client: HttpClient, baseUrl: String, message: String) {
