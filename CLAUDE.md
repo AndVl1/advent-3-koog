@@ -2,3 +2,4 @@
 - Use ktor documentation to find any information about ktor framework (https://ktor.io/)
 - Always use only last available versions of libraries and frameworks, use web search to determine them
 - Use libs.versions.toml for version management. Never downgrade libraries versions
+- Try to find documentation in /tools/docs. If not, download them with /tools/scripts/download-docs.sh

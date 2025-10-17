@@ -1,27 +1,29 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.plugin.serialization)
-    application
-}
-
-application {
-    mainClass = "ru.andvl.chatter.cli.CliAppKt"
 }
 
 dependencies {
+    implementation(project(":core"))
+    implementation(libs.koog.ktor)
+    implementation(libs.koog.agents)
+    implementation(libs.ktor.server.core)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
-    implementation(libs.kotlinx.cli)
+    implementation(libs.kotlinx.coroutines.core)
+    
+    // Logging
+    implementation(libs.logback.classic)
     
     testImplementation(libs.kotlin.test.junit)
 }
 
-tasks.test {
-    useJUnitPlatform()
-}
-
 kotlin {
     jvmToolchain(17)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
