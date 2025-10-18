@@ -1,23 +1,24 @@
-package ru.andvl.chatter.backend.dto
+package ru.andvl.chatter.cli.models
 
 import kotlinx.serialization.Serializable
 import ru.andvl.chatter.shared.models.ConversationState
+import ru.andvl.chatter.shared.models.SharedCheckListItem
 import ru.andvl.chatter.shared.models.SharedStructuredResponse
 
-/**
- * Request DTO for chat with context
- */
+typealias StructuredResponse = SharedStructuredResponse
+typealias CheckListItem = SharedCheckListItem
+
 @Serializable
-data class ChatRequestDto(
+data class ChatContextRequest(
     val message: String,
     val conversationState: ConversationState? = null, // Include conversation state for checklist persistence
-    val maxHistoryLength: Int = 10,
-    val provider: String? = null, // "google" or "openrouter"
-    val systemPrompt: String? = null // Optional system prompt from client
+    val maxHistoryLength: Int = 20,
+    val provider: String? = null,
+    val systemPrompt: String? = null
 )
 
 /**
- * Response DTO for chat
+ * Response DTO for chat - matches server's ChatResponseDto
  */
 @Serializable
 data class ChatResponseDto(

@@ -4,6 +4,7 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.prompt.message.Message
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import ru.andvl.chatter.shared.models.SharedCheckListItem
 
 /**
  * Simple message data class
@@ -20,7 +21,8 @@ data class ChatRequest(
     val message: String,
     val systemPrompt: String? = null,
     val history: List<Message> = emptyList(),
-    val maxHistoryLength: Int = 10 // Limit history to prevent token overflow
+    val maxHistoryLength: Int = 10, // Limit history to prevent token overflow
+    val currentChecklist: List<SharedCheckListItem> = emptyList() // Current checklist for context
 )
 
 /**
