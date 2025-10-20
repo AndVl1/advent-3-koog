@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":shared-models"))
     implementation(libs.koog.ktor)
     implementation(libs.koog.agents)
     implementation(libs.ktor.server.core)

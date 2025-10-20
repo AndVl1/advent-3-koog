@@ -35,6 +35,9 @@ out/
 ### VS Code ###
 .vscode/
 
+### Test Scripts ###
+/tests/
+
 /config.properties
 /.env
 config.properties

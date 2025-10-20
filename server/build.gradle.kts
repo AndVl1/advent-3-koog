@@ -12,6 +12,7 @@ application {
 dependencies {
     implementation(project(":core"))
     implementation(project(":koog-service"))
+    implementation(project(":shared-models"))
     implementation(libs.ktor.server.di)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.serialization.kotlinx.json)

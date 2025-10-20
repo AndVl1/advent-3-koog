@@ -1,31 +1,28 @@
 package ru.andvl.chatter.backend
 
 import ai.koog.ktor.Koog
-import ru.andvl.chatter.koog.service.KoogService
-import ru.andvl.chatter.koog.service.KoogServiceFactory
+import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
-import io.ktor.server.plugins.di.*
 import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.plugins.di.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.rpc.krpc.ktor.server.Krpc
 import kotlinx.rpc.krpc.ktor.server.rpc
-import kotlinx.rpc.krpc.serialization.json.*
+import kotlinx.rpc.krpc.serialization.json.json
+import kotlinx.serialization.Serializable
 import ru.andvl.SampleService
 import ru.andvl.SampleServiceImpl
-import ru.andvl.chatter.koog.config.KoogConfig
-import ru.andvl.chatter.koog.model.ChatRequest
-import ru.andvl.chatter.koog.model.ChatResponse
-import ru.andvl.chatter.koog.model.SimpleMessage
 import ru.andvl.chatter.backend.dto.ChatRequestDto
 import ru.andvl.chatter.backend.dto.ChatResponseDto
-import ru.andvl.chatter.backend.dto.MessageDto
+import ru.andvl.chatter.koog.mapping.toKoogMessages
+import ru.andvl.chatter.koog.mapping.toSharedResponse
+import ru.andvl.chatter.koog.model.ChatRequest
+import ru.andvl.chatter.koog.model.ChatResponse
+import ru.andvl.chatter.koog.service.KoogServiceFactory
 import ru.andvl.chatter.koog.service.Provider
-import java.util.Properties
-import kotlinx.serialization.Serializable
 
 @Serializable
 data class HealthStatus(
@@ -83,39 +80,39 @@ fun Application.configureFrameworks() {
                 try {
                     val request = call.receive<ChatRequestDto>()
                     log.info("Received context chat request: ${request.message.take(100)}...")
+                    request.conversationState?.activeChecklist?.let {
+                        log.info("Current checklist: ${it.joinToString()}")
+                    }
 
                     val koogService = KoogServiceFactory.createFromEnv()
 
-                    // Convert DTO history to SimpleMessage objects
-                    val history = request.history.map {
-                        SimpleMessage(
-                            role = it.role.lowercase(),
-                            content = it.content
-                        )
-                    }
+                    // Get history and checklist from conversation state
+                    val conversationState = request.conversationState
+                    val history = conversationState?.history?.toKoogMessages() ?: emptyList()
+                    val activeChecklist = conversationState?.activeChecklist ?: emptyList()
 
-                    // Create ChatRequest
+                    // Create ChatRequest with checklist context
                     val chatRequest = ChatRequest(
                         message = request.message,
+                        systemPrompt = request.systemPrompt,
                         history = history,
-                        maxHistoryLength = request.maxHistoryLength
+                        maxHistoryLength = request.maxHistoryLength,
+                        currentChecklist = activeChecklist // Pass current checklist for context
                     )
 
                     // Use provider if specified (pure AiAgents, no RoutingContext)
-                    val response: ChatResponse = if (request.provider != null) {
-                        val provider = when (request.provider.lowercase()) {
+                    val response: ChatResponse = run {
+                        val provider = when (request.provider?.lowercase()) {
                             "google" -> Provider.GOOGLE
                             "openrouter" -> Provider.OPENROUTER
                             else -> Provider.OPENROUTER
                         }
-                        koogService.chatWithContext(chatRequest, provider, this)
-                    } else {
-                        koogService.chat(chatRequest, this)
+                        koogService.chat(chatRequest, this, provider)
                     }
 
                     log.info("AI response with context generated successfully")
                     call.respond(ChatResponseDto(
-                        response = response.response,
+                        response = response.response.toSharedResponse(),
                         model = response.model,
                         usage = response.usage?.let {
                             ru.andvl.chatter.backend.dto.TokenUsageDto(
