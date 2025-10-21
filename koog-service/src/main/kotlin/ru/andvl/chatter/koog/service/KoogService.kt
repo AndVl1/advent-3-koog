@@ -78,7 +78,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
     ): ChatResponse {
         val model: LLModel = when (provider) {
             Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> OpenRouterModels.Gemini2_5Flash
+            Provider.OPENROUTER -> OpenRouterModels.Gemini2_5FlashLite
             else -> OpenRouterModels.Gemini2_5Flash
         }
         return withContext(Dispatchers.IO) {
@@ -91,11 +91,11 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             )
             try {
                 val executor = routingContext.llm()
-                val strategy = getStructuredAgentStrategy()
+                val strategy = getStructuredAgentStrategy(systemPrompt)
                 val agentConfig = AIAgentConfig(
                     prompt = prompt,
                     model = model,
-                    maxAgentIterations = 10,
+                    maxAgentIterations = 50,
                 )
                 val agent = AIAgent(
                     promptExecutor = executor,
@@ -105,7 +105,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     id = "structured_agent",
                     installFeatures = {}
                 )
-                val resp = agent.run(request.message)
+                val resp = agent.run(request)
 
                 ChatResponse(
                     response = resp.getOrNull()?.structure!!,
