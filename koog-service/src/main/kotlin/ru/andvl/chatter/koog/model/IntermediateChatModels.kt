@@ -5,19 +5,19 @@ import kotlinx.serialization.Serializable
 
 
 @Serializable
-@LLMDescription("Анализ запроса пользователя и определение типа ответа")
+@LLMDescription("Analysis of user request and determination of response type")
 internal data class IntentAnalysis(
-    @property:LLMDescription("Способ ответа пользователю")
+    @property:LLMDescription("How to respond to the user")
     val intentType: IntentType, // "DIRECT_ANSWER", "COLLECT_INFO
 
 )
 
 @Serializable
-@LLMDescription("Способ ответа пользователю")
+@LLMDescription("How to respond to the user")
 internal enum class IntentType {
-    @LLMDescription("Простой вопрос или достаточно информации для объяснения")
+    @LLMDescription("Simple question or sufficient information available for explanation")
     DIRECT_ANSWER,
-    @LLMDescription("Необходимо создать/построить что-то сложное или деталей не хватает")
+    @LLMDescription("Need to create/build something complex or insufficient details provided")
     COLLECT_INFO
 }
 

@@ -6,6 +6,8 @@ import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.ktor.llm
 import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.clients.openrouter.OpenRouterModels
+import ai.koog.prompt.llm.LLMCapability
+import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.structure.StructureFixingParser
 import ai.koog.prompt.structure.executeStructured
@@ -78,7 +80,15 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
     ): ChatResponse {
         val model: LLModel = when (provider) {
             Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> OpenRouterModels.Gemini2_5FlashLite
+            Provider.OPENROUTER -> LLModel(
+                provider = LLMProvider.OpenRouter,
+                id = "z-ai/glm-4.6",
+                capabilities = listOf(
+                    LLMCapability.Temperature,
+                    LLMCapability.Completion,
+                ),
+                contextLength = 16_000, //
+            )
             else -> OpenRouterModels.Gemini2_5Flash
         }
         return withContext(Dispatchers.IO) {

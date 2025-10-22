@@ -5,7 +5,9 @@ import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.dsl.prompt
-import ai.koog.prompt.executor.clients.openrouter.OpenRouterModels
+import ai.koog.prompt.llm.LLMCapability
+import ai.koog.prompt.llm.LLMProvider
+import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.params.LLMParams
 import ai.koog.prompt.structure.StructureFixingParser
 import ru.andvl.chatter.koog.model.*
@@ -43,26 +45,38 @@ internal fun getStructuredAgentStrategy(
                 updatePrompt {
                     system(
                         """
-                Проанализируй запрос пользователя и определи:
-                1. Можно ли ответить сразу (DIRECT_ANSWER) 
-                2. Нужно ли собрать дополнительную информацию через чеклист (COLLECT_INFO)
+                Analyze the user's request and determine:
+                1. Can it be answered directly (DIRECT_ANSWER) 
+                2. Do we need to collect additional information through a checklist (COLLECT_INFO)
                 
-                Критерии для COLLECT_INFO:
-                - Пользователь просит создать/построить что-то сложное
-                - Запрос содержит слова: "создать", "построить", "разработать", "помочь сделать"
-                - Недостаточно деталей для полного ответа
+                Criteria for COLLECT_INFO:
+                - User asks to create/build something complex
+                - Request contains words like: "create", "build", "develop", "help make", "design", "implement"
+                - Not enough details for a complete answer
+                - Requires gathering requirements or specifications
                 
-                Критерии для DIRECT_ANSWER:
-                - Простые вопросы
-                - Запросы на объяснение
-                - Достаточно информации в запросе
+                Criteria for DIRECT_ANSWER:
+                - Simple questions
+                - Requests for explanation or information
+                - Sufficient information provided in the request
+                - General knowledge questions
+                
+                IMPORTANT: Always respond in the same language as the user's request.
                 """
                     )
-                    user("${request.message}\n\nТекущий чеклист: ${request.currentChecklist}")
+                    user("${request.message}\n\nCurrent checklist: ${request.currentChecklist}")
                 }
                 requestLLMStructured<IntentAnalysis>(
                     fixingParser = StructureFixingParser(
-                        fixingModel = OpenRouterModels.GPT5Nano,
+                        fixingModel = LLModel(
+                            provider = LLMProvider.OpenRouter,
+                            id = "z-ai/glm-4.6", // z-ai/glm-4.6 mistralai/mistral-7b-instruct google/gemma-3n-e4b-it
+                            capabilities = listOf(
+                                LLMCapability.Temperature,
+                                LLMCapability.Completion,
+                            ),
+                            contextLength = 16_000, //
+                        ),
                         retries = 3
                     )
                 )
@@ -79,13 +93,28 @@ internal fun getStructuredAgentStrategy(
             llm.writeSession {
                 updatePrompt {
                     system("""
-                Дай полный и развернутый ответ на вопрос пользователя.
-                Используй структурированный формат с заголовком и сообщением.
-                Чеклист оставь пустым, так как дополнительная информация не нужна.
+                Provide a complete and comprehensive answer to the user's question.
+                Use a structured format with title and message.
+                Leave the checklist empty since no additional information is needed.
+                
+                IMPORTANT: Always respond in the same language as the user's request.
                 """)
                     user(request.second.message)
                 }
-                requestLLMStructured<StructuredResponse>()
+                requestLLMStructured<StructuredResponse>(
+                    fixingParser = StructureFixingParser(
+                        fixingModel = LLModel(
+                            provider = LLMProvider.OpenRouter,
+                            id = "z-ai/glm-4.6", // z-ai/glm-4.6 mistralai/mistral-7b-instruct google/gemma-3n-e4b-it
+                            capabilities = listOf(
+                                LLMCapability.Temperature,
+                                LLMCapability.Completion,
+                            ),
+                            contextLength = 16_000, //
+                        ),
+                        retries = 3
+                    )
+                )
             }
         }
         edge(nodeStart forwardTo generateDirectAnswer)
@@ -99,7 +128,20 @@ internal fun getStructuredAgentStrategy(
                     system(mainSystemPrompt ?: "") // Используем существующий системный промпт
                     user(request.second.message)
                 }
-                requestLLMStructured<StructuredResponse>() to request.second
+                requestLLMStructured<StructuredResponse>(
+                    fixingParser = StructureFixingParser(
+                        fixingModel = LLModel(
+                            provider = LLMProvider.OpenRouter,
+                            id = "z-ai/glm-4.6", // z-ai/glm-4.6 mistralai/mistral-7b-instruct google/gemma-3n-e4b-it
+                            capabilities = listOf(
+                                LLMCapability.Temperature,
+                                LLMCapability.Completion,
+                            ),
+                            contextLength = 16_000, //
+                        ),
+                        retries = 3
+                    )
+                ) to request.second
             }
         }
         edge(nodeStart forwardTo createOrUpdateChecklist)
@@ -127,19 +169,34 @@ internal fun getStructuredAgentStrategy(
                 updatePrompt {
                     system(
                         """
-                Теперь у тебя есть вся необходимая информация из чеклиста.
-                Создай финальный, подробный ответ с конкретными шагами и рекомендациями.
-                Не создавай новый чеклист - дай полную инструкцию.
+                Now you have all the necessary information from the checklist.
+                Create a final, detailed answer with specific steps and recommendations.
+                Do not create a new checklist - provide complete instructions.
+                
+                IMPORTANT: Always respond in the same language as the user's original request.
                 """
                     )
                     user(
                         """
-                Изначальный запрос: ${request.message}
-                Собранная информация: ${resolvedChecklist.getOrNull()!!.structure.checkList.joinToString("\n") { "- ${it.point}: ${it.resolution}" }}
+                Original request: ${request.message}
+                Collected information: ${resolvedChecklist.getOrNull()!!.structure.checkList.joinToString("\n") { "- ${it.point}: ${it.resolution}" }}
                 """
                     )
                 }
-                requestLLMStructured<StructuredResponse>()
+                requestLLMStructured<StructuredResponse>(
+                    fixingParser = StructureFixingParser(
+                        fixingModel = LLModel(
+                            provider = LLMProvider.OpenRouter,
+                            id = "z-ai/glm-4.6", // z-ai/glm-4.6 mistralai/mistral-7b-instruct google/gemma-3n-e4b-it
+                            capabilities = listOf(
+                                LLMCapability.Temperature,
+                                LLMCapability.Completion,
+                            ),
+                            contextLength = 16_000, //
+                        ),
+                        retries = 3
+                    )
+                )
             }
         }
         edge(nodeStart forwardTo generateFinalAnswer)
