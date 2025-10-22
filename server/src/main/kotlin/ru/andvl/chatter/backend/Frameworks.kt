@@ -35,10 +35,12 @@ fun Application.configureFrameworks() {
     // Теперь API ключи загружаются из .env через Application.main и устанавливаются как системные свойства
     val googleApiKey = System.getProperty("GOOGLE_API_KEY")
     val openRouterApiKey = System.getProperty("OPENROUTER_API_KEY")
+    val agentRouterApiKey = System.getProperty("AGENTROUTER_API_KEY")
 
     log.info("Loading API keys from system properties (loaded from .env)...")
     log.info("Google API key: ${googleApiKey?.take(10)}...")
     log.info("OpenRouter API key: ${openRouterApiKey?.take(10)}...")
+    log.info("AgentRouter API key: ${agentRouterApiKey?.take(10)}...")
 
   dependencies {
         provide { GreetingService { "Hello, World!" } }
@@ -51,6 +53,9 @@ fun Application.configureFrameworks() {
         llm {
             google(apiKey = googleApiKey ?: "your-google-api-key")
             openRouter(apiKey = openRouterApiKey ?: "your-openrouter-api-key")
+            openAI(apiKey = agentRouterApiKey ?: "your-agent-api-key") {
+                baseUrl = "https://agentrouter.org/v1"
+            }
         }
     }
 
