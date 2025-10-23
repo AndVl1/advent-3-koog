@@ -43,6 +43,20 @@ internal fun getStructuredAgentStrategy(
         val analyzeIntent by node<ChatRequest, Pair<IntentAnalysis, ChatRequest>>("analyze-intent") { request ->
             llm.writeSession {
                 updatePrompt {
+                    model = LLModel(
+                        provider = LLMProvider.OpenRouter,
+                        id = "z-ai/glm-4.6", // "z-ai/glm-4.6", //"mistralai/mistral-tiny",
+                        capabilities = listOf(
+                            LLMCapability.Temperature,
+                            LLMCapability.Completion,
+                        ),
+                        contextLength = 16_000, //
+                    )
+                    prompt = prompt.copy(
+                        params = prompt.params.copy(
+                            temperature = 0.0
+                        )
+                    )
                     system(
                         """
                 Analyze the user's request and determine:
@@ -60,8 +74,6 @@ internal fun getStructuredAgentStrategy(
                 - Requests for explanation or information
                 - Sufficient information provided in the request
                 - General knowledge questions
-                
-                IMPORTANT: Always respond in the same language as the user's request.
                 """
                     )
                     user("${request.message}\n\nCurrent checklist: ${request.currentChecklist}")
@@ -92,6 +104,21 @@ internal fun getStructuredAgentStrategy(
         val generateDirectAnswer by node<Pair<IntentAnalysis, ChatRequest>, Response>("generate-answer") { request ->
             llm.writeSession {
                 updatePrompt {
+                    model = LLModel(
+                        provider = LLMProvider.OpenRouter,
+                        id = "qwen/qwen3-8b",
+                        capabilities = listOf(
+                            LLMCapability.Temperature,
+                            LLMCapability.Speculation,
+                            LLMCapability.Completion,
+                        ),
+                        contextLength = 16_000, //
+                    )
+                    prompt = prompt.copy(
+                        params = prompt.params.copy(
+                            temperature = 0.0
+                        )
+                    )
                     system("""
                 Provide a complete and comprehensive answer to the user's question.
                 Use a structured format with title and message.
@@ -125,6 +152,18 @@ internal fun getStructuredAgentStrategy(
         val createOrUpdateChecklist by node<Pair<IntentAnalysis, ChatRequest>, Pair<Response, ChatRequest>>("checklist-management") { request ->
             llm.writeSession {
                 updatePrompt {
+                    prompt = prompt.copy(
+                        params = prompt.params.copy(
+                            temperature = null
+                        )
+                    )
+                    model = model.copy(
+                        capabilities = listOf(
+                            LLMCapability.Temperature,
+                            LLMCapability.Speculation,
+                            LLMCapability.Completion,
+                        )
+                    )
                     system(mainSystemPrompt ?: "") // Используем существующий системный промпт
                     user(request.second.message)
                 }
