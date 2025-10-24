@@ -2,6 +2,7 @@ package ru.andvl.chatter.cli.ui
 
 import ru.andvl.chatter.cli.models.CheckListItem
 import ru.andvl.chatter.cli.models.StructuredResponse
+import ru.andvl.chatter.cli.models.TokenUsageDto
 import ru.andvl.chatter.shared.models.MessageRole
 import ru.andvl.chatter.shared.models.SharedMessage
 
@@ -130,5 +131,9 @@ object ColorPrinter {
                 println("$GREEN✅ $newlyResolved item(s) resolved in checklist ($resolvedCount/${newChecklist.size} total)$RESET")
             }
         }
+    }
+
+    fun printTokenUsage(usage: TokenUsageDto) {
+        println("$CYAN📊 Tokens: ${usage.promptTokens} prompt + ${usage.completionTokens} completion = ${usage.totalTokens} total$RESET")
     }
 }

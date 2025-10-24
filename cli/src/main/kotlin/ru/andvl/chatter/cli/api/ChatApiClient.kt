@@ -72,6 +72,11 @@ class ChatApiClient {
                     // Print response
                     ColorPrinter.printResponse(structuredResponse)
 
+                    // Print token usage if available
+                    chatResponse.usage?.let { usage ->
+                        ColorPrinter.printTokenUsage(usage)
+                    }
+
                     structuredResponse
                 } catch (e: Exception) {
                     // Fallback: try to parse as plain StructuredResponse

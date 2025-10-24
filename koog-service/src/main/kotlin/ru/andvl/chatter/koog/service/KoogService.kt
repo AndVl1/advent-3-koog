@@ -19,6 +19,7 @@ import ru.andvl.chatter.koog.agents.getStructuredAgentStrategy
 import ru.andvl.chatter.koog.model.ChatRequest
 import ru.andvl.chatter.koog.model.ChatResponse
 import ru.andvl.chatter.koog.model.StructuredResponse
+import ru.andvl.chatter.koog.model.TokenUsage
 
 /**
  * Koog service - independent service for LLM interaction with context support
@@ -116,11 +117,19 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     installFeatures = {}
                 )
                 val resp = agent.run(request)
+                val structuredResponse = resp.getOrNull()
 
                 ChatResponse(
-                    response = resp.getOrNull()?.structure!!,
-                    originalMessage = resp.getOrNull()?.message,
-                    model = model.id
+                    response = structuredResponse?.structure!!,
+                    originalMessage = structuredResponse.message,
+                    model = model.id,
+                    usage = structuredResponse.message.metaInfo.let {
+                        TokenUsage(
+                            promptTokens = it.inputTokensCount ?: 0,
+                            completionTokens = it.outputTokensCount ?: 0,
+                            totalTokens = it.totalTokensCount ?: 0,
+                        )
+                    }
                 )
             } catch (e: Exception) {
                 // Fallback to GPTNano
