@@ -6,6 +6,8 @@ import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.structure.StructureFixingParser
 import ru.andvl.chatter.koog.agents.Response
+import ru.andvl.chatter.koog.agents.utils.MAX_CONTEXT_LENGTH
+import ru.andvl.chatter.koog.agents.utils.getLatestTokenUsage
 import ru.andvl.chatter.koog.model.ChatRequest
 import ru.andvl.chatter.koog.model.IntentAnalysis
 import ru.andvl.chatter.koog.model.StructuredResponse
@@ -29,7 +31,7 @@ internal inline fun AIAgentSubgraphBuilderBase<Pair<IntentAnalysis, ChatRequest>
                         LLMCapability.Speculation,
                         LLMCapability.Completion,
                     ),
-                    contextLength = 16_000, //
+                    contextLength = MAX_CONTEXT_LENGTH,
                 )
                 prompt = prompt.copy(
                     params = prompt.params.copy(
@@ -54,11 +56,13 @@ internal inline fun AIAgentSubgraphBuilderBase<Pair<IntentAnalysis, ChatRequest>
                             LLMCapability.Temperature,
                             LLMCapability.Completion,
                         ),
-                        contextLength = 16_000, //
+                        contextLength = MAX_CONTEXT_LENGTH,
                     ),
                     retries = 3
                 )
             )
+        }.also {
+            println("TOKENS USAGE: ${getLatestTokenUsage()}")
         }
     }
 }

@@ -4,10 +4,13 @@ import ai.koog.agents.core.agent.entity.AIAgentGraphStrategy
 import ai.koog.agents.core.agent.entity.AIAgentSubgraph
 import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
+import ai.koog.agents.core.dsl.extension.nodeLLMCompressHistory
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.params.LLMParams
 import ru.andvl.chatter.koog.agents.structured.*
+import ru.andvl.chatter.koog.agents.utils.isHistoryTooLong
+import ru.andvl.chatter.koog.agents.utils.nodeLLMCPrintCompressedHistory
 import ru.andvl.chatter.koog.model.*
 import ai.koog.prompt.structure.StructuredResponse as StructuredResponseKoog
 
@@ -37,22 +40,35 @@ internal fun getStructuredAgentPrompt(
 internal fun getStructuredAgentStrategy(
     mainSystemPrompt: String? = null,
 ): AIAgentGraphStrategy<ChatRequest, Response> = strategy("structured") {
+
     val intentAnalysis: AIAgentSubgraph<ChatRequest, Pair<IntentAnalysis, ChatRequest>> by intentAnalysisSubgraph()
     val directAnswer: AIAgentSubgraph<Pair<IntentAnalysis, ChatRequest>, Response> by directAnswerSubgraph()
     val infoCollection: AIAgentSubgraph<Pair<IntentAnalysis, ChatRequest>, Pair<Response, ChatRequest>> by infoCollectionSubgraph(mainSystemPrompt)
     val completionCheck: AIAgentSubgraph<Pair<Response, ChatRequest>, Triple<CompletionStatus, ChatRequest, Response>> by completionCheckSubgraph()
     val finalAnswer: AIAgentSubgraph<Triple<CompletionStatus, ChatRequest, Response>, Response> by finalAnswerSubgraph()
 
+    val tldrHistory by nodeLLMCompressHistory<Pair<IntentAnalysis, ChatRequest>>("tldr")
+    val printCompressedHistory by nodeLLMCPrintCompressedHistory<Pair<IntentAnalysis, ChatRequest>>("print_compressed")
     // Стартуем с анализа намерения
     edge(nodeStart forwardTo intentAnalysis)
 
+    // Предварительное опциональное сжатие контекста
+    edge(intentAnalysis forwardTo tldrHistory onCondition { isHistoryTooLong() })
+    edge(tldrHistory forwardTo printCompressedHistory)
+
     // Условное ветвление на основе анализа
     edge(intentAnalysis forwardTo directAnswer onCondition { intent ->
-        intent.first.intentType == IntentType.DIRECT_ANSWER
+        intent.first.intentType == IntentType.DIRECT_ANSWER && !isHistoryTooLong()
+    })
+    edge(printCompressedHistory forwardTo directAnswer onCondition { intent ->
+        intent.first.intentType == IntentType.DIRECT_ANSWER && isHistoryTooLong()
     })
 
     edge(intentAnalysis forwardTo infoCollection onCondition  { intent ->
-        intent.first.intentType == IntentType.COLLECT_INFO
+        intent.first.intentType == IntentType.COLLECT_INFO && !isHistoryTooLong()
+    })
+    edge(printCompressedHistory forwardTo infoCollection onCondition { intent ->
+        intent.first.intentType == IntentType.COLLECT_INFO && isHistoryTooLong()
     })
 
     // Проверяем завершенность после сбора информации
