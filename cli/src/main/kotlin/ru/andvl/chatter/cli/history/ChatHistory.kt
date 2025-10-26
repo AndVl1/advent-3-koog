@@ -1,5 +1,6 @@
 package ru.andvl.chatter.cli.history
 
+import ru.andvl.chatter.cli.statistics.TokenStatistics
 import ru.andvl.chatter.cli.ui.ColorPrinter
 import ru.andvl.chatter.shared.models.ConversationState
 import ru.andvl.chatter.shared.models.MessageRole
@@ -11,16 +12,12 @@ class ChatHistory {
     private var conversationState = ConversationState(
         conversationId = UUID.randomUUID().toString()
     )
-    private val maxHistorySize = 100 // Limit history size
+    // Note: No client-side history limits - compression handled by backend
+    private val tokenStatistics = TokenStatistics()
 
     fun addMessage(message: SharedMessage) {
         conversationState = conversationState.addMessage(message)
-
-        // Trim history if it gets too large
-        if (conversationState.history.size > maxHistorySize) {
-            val trimmedHistory = conversationState.history.takeLast(maxHistorySize)
-            conversationState = conversationState.copy(history = trimmedHistory)
-        }
+        // Note: Context compression/trimming is handled by the backend
     }
 
     // Convenience method for adding simple messages
@@ -63,6 +60,7 @@ class ChatHistory {
         conversationState = ConversationState(
             conversationId = UUID.randomUUID().toString()
         )
+        tokenStatistics.recordHistoryCleared()
         ColorPrinter.printHistoryCleared()
     }
 
@@ -73,4 +71,28 @@ class ChatHistory {
     fun isEmpty(): Boolean = conversationState.history.isEmpty()
 
     fun size(): Int = conversationState.history.size
+    
+    /**
+     * Add token usage statistics from a request
+     */
+    fun addTokenUsage(usage: ru.andvl.chatter.cli.models.TokenUsageDto) {
+        tokenStatistics.addUsage(usage)
+    }
+    
+    /**
+     * Get token statistics
+     */
+    fun getTokenStatistics(): TokenStatistics = tokenStatistics
+    
+    /**
+     * Display token statistics
+     */
+    fun displayTokenStatistics() {
+        println(tokenStatistics.getSummary())
+    }
+    
+    /**
+     * Get compact token statistics for status display
+     */
+    fun getCompactTokenStats(): String = tokenStatistics.getCompactSummary()
 }

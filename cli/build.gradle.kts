@@ -14,7 +14,9 @@ dependencies {
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
-    implementation(libs.kotlinx.cli)
+    implementation(libs.clikt)
+    implementation(libs.jline.terminal)
+    implementation(libs.jline.reader)
     implementation(libs.logback.classic)
 
     testImplementation(libs.kotlin.test.junit)

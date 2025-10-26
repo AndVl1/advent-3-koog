@@ -72,9 +72,10 @@ class ChatApiClient {
                     // Print response
                     ColorPrinter.printResponse(structuredResponse)
 
-                    // Print token usage if available
+                    // Print token usage if available and add to statistics
                     chatResponse.usage?.let { usage ->
                         ColorPrinter.printTokenUsage(usage)
+                        history.addTokenUsage(usage)
                     }
 
                     structuredResponse

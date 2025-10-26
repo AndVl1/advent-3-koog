@@ -2,6 +2,9 @@
 koog = "0.5.1"
 kotlin = "2.2.20"
 kotlinx-cli = "0.3.6"
+clikt = "5.0.3"
+kotter = "1.2.1"
+jline = "3.27.1"
 kotlinx-coroutines = "1.9.0"
 kotlinx-rpc = "0.10.0"
 ktor = "3.3.0"
@@ -29,6 +32,10 @@ ktor-server-config-yaml = { module = "io.ktor:ktor-server-config-yaml", version.
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 kotlinx-cli = { module = "org.jetbrains.kotlinx:kotlinx-cli", version.ref = "kotlinx-cli" }
+clikt = { module = "com.github.ajalt.clikt:clikt", version.ref = "clikt" }
+kotter = { module = "com.varabyte.kotter:kotter-jvm", version.ref = "kotter" }
+jline-terminal = { module = "org.jline:jline-terminal", version.ref = "jline" }
+jline-reader = { module = "org.jline:jline-reader", version.ref = "jline" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
