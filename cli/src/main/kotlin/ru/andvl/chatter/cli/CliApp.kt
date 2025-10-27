@@ -35,6 +35,10 @@ class ChatterCli : CliktCommand(
         .flag()
         .help("Run token usage tests")
 
+    private val testSse by option("--sse")
+        .flag()
+        .help("Test Server-Sent Events connection")
+
     override fun run() {
         runBlocking {
         val client = ChatApiClient()
@@ -42,6 +46,10 @@ class ChatterCli : CliktCommand(
 
         try {
             when {
+                testSse -> {
+                    echo("📡 Testing Server-Sent Events connection...")
+                    client.testSseConnection(baseUrl)
+                }
                 testTokens -> {
                     echo("🧪 Running token usage tests...")
                     // TODO: Implement token testing when TokenTester is ready

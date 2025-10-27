@@ -5,6 +5,7 @@ import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.sse.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
@@ -24,6 +25,8 @@ class ChatApiClient {
         install(HttpTimeout) {
             requestTimeoutMillis = 60_000
         }
+
+        install(SSE)
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -121,6 +124,33 @@ class ChatApiClient {
         }
     }
 
+    suspend fun testSseConnection(baseUrl: String) {
+        println("🔌 Connecting to SSE endpoint: $baseUrl/ai/random-numbers")
+
+        try {
+            client.sse("$baseUrl/ai/random-numbers") {
+                incoming.collect { event ->
+                    when (event.event) {
+                        "random-number" -> {
+                            println("📡 Received random number event: ${event.data}")
+                        }
+
+                        "completed" -> {
+                            println("✅ Stream completed: ${event.data}")
+                        }
+
+                        "error" -> {
+                            println("❌ SSE Error: ${event.data}")
+                        }
+                    }
+                    event.event
+                    println(event)
+                }
+            }
+        } catch (e: Exception) {
+            ColorPrinter.printConnectionError(e.message ?: "Unknown SSE error", baseUrl)
+        }
+    }
 
     fun close() {
         client.close()
