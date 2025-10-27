@@ -1,9 +1,9 @@
-package ru.andvl.chatter.koog.agents.structured
+package ru.andvl.chatter.koog.agents.structured.subgraphs
 
 import ai.koog.agents.core.dsl.builder.AIAgentGraphStrategyBuilder
 import ai.koog.agents.core.dsl.builder.AIAgentSubgraphDelegate
 import ai.koog.agents.core.dsl.builder.forwardTo
-import ru.andvl.chatter.koog.agents.Response
+import ru.andvl.chatter.koog.agents.structured.Response
 import ru.andvl.chatter.koog.model.ChatRequest
 import ru.andvl.chatter.koog.model.CompletionStatus
 

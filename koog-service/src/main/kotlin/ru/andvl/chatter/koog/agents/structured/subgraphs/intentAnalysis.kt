@@ -1,11 +1,11 @@
-package ru.andvl.chatter.koog.agents.structured
+package ru.andvl.chatter.koog.agents.structured.subgraphs
 
 import ai.koog.agents.core.dsl.builder.*
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.structure.StructureFixingParser
-import ru.andvl.chatter.koog.agents.Response
+import ru.andvl.chatter.koog.agents.structured.Response
 import ru.andvl.chatter.koog.agents.utils.MAX_CONTEXT_LENGTH
 import ru.andvl.chatter.koog.agents.utils.getLatestTokenUsage
 import ru.andvl.chatter.koog.model.ChatRequest

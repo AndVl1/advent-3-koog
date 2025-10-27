@@ -1,4 +1,4 @@
-package ru.andvl.chatter.koog.agents
+package ru.andvl.chatter.koog.agents.structured
 
 import ai.koog.agents.core.agent.entity.AIAgentGraphStrategy
 import ai.koog.agents.core.agent.entity.AIAgentSubgraph
@@ -8,7 +8,7 @@ import ai.koog.agents.core.dsl.extension.nodeLLMCompressHistory
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.params.LLMParams
-import ru.andvl.chatter.koog.agents.structured.*
+import ru.andvl.chatter.koog.agents.structured.subgraphs.*
 import ru.andvl.chatter.koog.agents.utils.isHistoryTooLong
 import ru.andvl.chatter.koog.agents.utils.nodeLLMCPrintCompressedHistory
 import ru.andvl.chatter.koog.model.*
