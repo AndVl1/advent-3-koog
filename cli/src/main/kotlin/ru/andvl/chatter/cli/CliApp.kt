@@ -1,63 +1,72 @@
 package ru.andvl.chatter.cli
 
-import kotlinx.cli.ArgParser
-import kotlinx.cli.ArgType
-import kotlinx.cli.default
+import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.flag
+import com.github.ajalt.clikt.parameters.options.help
+import com.github.ajalt.clikt.parameters.options.option
+import com.github.ajalt.clikt.parameters.types.int
 import kotlinx.coroutines.runBlocking
 import ru.andvl.chatter.cli.api.ChatApiClient
 import ru.andvl.chatter.cli.history.ChatHistory
 import ru.andvl.chatter.cli.interactive.InteractiveMode
 
-fun main(args: Array<String>): Unit = runBlocking {
-    val parser = ArgParser("chatter-cli")
+class ChatterCli : CliktCommand(
+    name = "chatter-cli"
+) {
+    private val host by option("-H", "--host")
+        .help("Server host")
+        .default("localhost")
 
-    val host by parser.option(
-        ArgType.String,
-        shortName = "H",
-        fullName = "host",
-        description = "Server host"
-    ).default("localhost")
+    private val port by option("-p", "--port")
+        .int()
+        .help("Server port")
+        .default(8081)
 
-    val port by parser.option(
-        ArgType.Int,
-        shortName = "p",
-        fullName = "port",
-        description = "Server port"
-    ).default(8081)
+    private val message by option("-m", "--message")
+        .help("Message to send to AI")
 
-    val message by parser.option(
-        ArgType.String,
-        shortName = "m",
-        fullName = "message",
-        description = "Message to send to AI"
-    )
+    private val interactive by option("-i", "--interactive")
+        .flag()
+        .help("Run in interactive mode")
 
-    val interactive by parser.option(
-        ArgType.Boolean,
-        shortName = "i",
-        fullName = "interactive",
-        description = "Run in interactive mode"
-    ).default(false)
+    private val testTokens by option("-t", "--test-tokens")
+        .flag()
+        .help("Run token usage tests")
 
-    parser.parse(args)
+    override fun run() {
+        runBlocking {
+        val client = ChatApiClient()
+        val baseUrl = "http://$host:$port"
 
-    val client = ChatApiClient()
-    val baseUrl = "http://$host:$port"
-
-    try {
-        if (interactive) {
-            val interactiveMode = InteractiveMode(client, baseUrl)
-            interactiveMode.start()
-        } else if (message != null) {
-            val history = ChatHistory()
-            client.sendMessage(baseUrl, message!!, history)
-        } else {
-            println("Please provide either --message or use --interactive mode")
-            println("Use --help for more information")
+        try {
+            when {
+                testTokens -> {
+                    echo("🧪 Running token usage tests...")
+                    // TODO: Implement token testing when TokenTester is ready
+                    echo("Token testing functionality coming soon!")
+                }
+                interactive -> {
+                    val interactiveMode = InteractiveMode(client, baseUrl)
+                    interactiveMode.start()
+                }
+                message != null -> {
+                    val history = ChatHistory()
+                    client.sendMessage(baseUrl, message!!, history)
+                }
+                else -> {
+                    echo("Please provide either --message or use --interactive mode", err = true)
+                    echo("Use --help for more information", err = true)
+                }
+            }
+        } catch (e: Exception) {
+            echo("Error: ${e.message}", err = true)
+        } finally {
+            client.close()
         }
-    } catch (e: Exception) {
-        println("Error: ${e.message}")
-    } finally {
-        client.close()
+        }
     }
 }
+
+fun main(args: Array<String>) = ChatterCli().main(args)
