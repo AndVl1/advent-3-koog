@@ -14,8 +14,8 @@ import ai.koog.prompt.structure.executeStructured
 import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import ru.andvl.chatter.koog.agents.getStructuredAgentPrompt
-import ru.andvl.chatter.koog.agents.getStructuredAgentStrategy
+import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
+import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
 import ru.andvl.chatter.koog.model.ChatRequest
 import ru.andvl.chatter.koog.model.ChatResponse
 import ru.andvl.chatter.koog.model.StructuredResponse

@@ -13,6 +13,7 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.content.negotiation)
+    // Manual SSE client implementation - no dedicated Ktor client SSE plugin available
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.clikt)
     implementation(libs.jline.terminal)

@@ -9,10 +9,13 @@ import io.ktor.server.plugins.di.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.server.sse.*
+import kotlinx.coroutines.delay
 import kotlinx.rpc.krpc.ktor.server.Krpc
 import kotlinx.rpc.krpc.ktor.server.rpc
 import kotlinx.rpc.krpc.serialization.json.json
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import ru.andvl.SampleService
 import ru.andvl.SampleServiceImpl
 import ru.andvl.chatter.backend.dto.ChatRequestDto
@@ -23,6 +26,7 @@ import ru.andvl.chatter.koog.model.ChatRequest
 import ru.andvl.chatter.koog.model.ChatResponse
 import ru.andvl.chatter.koog.service.KoogServiceFactory
 import ru.andvl.chatter.koog.service.Provider
+import kotlin.random.Random
 
 @Serializable
 data class HealthStatus(
@@ -48,6 +52,7 @@ fun Application.configureFrameworks() {
     install(ContentNegotiation) {
         json()
     }
+    install(SSE)
     install(Krpc)
     install(Koog) {
         llm {
@@ -156,6 +161,60 @@ fun Application.configureFrameworks() {
                     call.respond(
                         HttpStatusCode.InternalServerError,
                         mapOf("status" to "error", "message" to e.message)
+                    )
+                }
+            }
+
+            // SSE endpoint for random numbers
+            sse("/random-numbers") {
+                var messageCount = 0
+                val maxMessages = 7
+
+                log.info("SSE client connected to /random-numbers")
+
+                try {
+                    while (messageCount < maxMessages) {
+                        val randomNumber = Random.nextInt(1, 1000)
+
+                        send(
+                            data = Json.encodeToString(
+                                kotlinx.serialization.json.JsonObject.serializer(),
+                                kotlinx.serialization.json.buildJsonObject {
+                                    put("number", kotlinx.serialization.json.JsonPrimitive(randomNumber))
+                                    put("message", kotlinx.serialization.json.JsonPrimitive(messageCount + 1))
+                                    put("timestamp", kotlinx.serialization.json.JsonPrimitive(System.currentTimeMillis()))
+                                }
+                            ),
+                            event = "random-number",
+                            id = (messageCount + 1).toString()
+                        )
+
+                        messageCount++
+                        log.info("Sent SSE message $messageCount/$maxMessages: $randomNumber")
+
+                        if (messageCount < maxMessages) {
+                            delay(1000) // Wait 3 seconds before next message
+                        }
+                    }
+
+                    // Send completion message
+                    send(
+                        data = Json.encodeToString(
+                            kotlinx.serialization.json.JsonObject.serializer(),
+                            kotlinx.serialization.json.buildJsonObject {
+                                put("status", kotlinx.serialization.json.JsonPrimitive("completed"))
+                                put("total_messages", kotlinx.serialization.json.JsonPrimitive(maxMessages))
+                            }
+                        ),
+                        event = "completed"
+                    )
+
+                    log.info("SSE stream completed after $maxMessages messages")
+                } catch (e: Exception) {
+                    log.error("Error in SSE stream", e)
+                    send(
+                        data = """{"error": "${e.message}"}""",
+                        event = "error"
                     )
                 }
             }
