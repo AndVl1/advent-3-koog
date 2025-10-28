@@ -16,10 +16,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
-import ru.andvl.chatter.koog.model.ChatRequest
-import ru.andvl.chatter.koog.model.ChatResponse
-import ru.andvl.chatter.koog.model.StructuredResponse
-import ru.andvl.chatter.koog.model.TokenUsage
+import ru.andvl.chatter.koog.model.structured.ChatRequest
+import ru.andvl.chatter.koog.model.structured.ChatResponse
+import ru.andvl.chatter.koog.model.structured.StructuredResponse
+import ru.andvl.chatter.koog.model.structured.TokenUsage
 
 /**
  * Koog service - independent service for LLM interaction with context support

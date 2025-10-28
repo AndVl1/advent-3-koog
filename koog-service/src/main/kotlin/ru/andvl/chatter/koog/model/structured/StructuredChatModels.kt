@@ -1,18 +1,10 @@
-package ru.andvl.chatter.koog.model
+package ru.andvl.chatter.koog.model.structured
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.prompt.message.Message
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import ru.andvl.chatter.shared.models.SharedCheckListItem
-
-/**
- * Simple message data class
- */
-data class SimpleMessage(
-    val role: String, // "user", "assistant", "system", "tool"
-    val content: String
-)
 
 /**
  * Data class for chat requests with context
@@ -32,7 +24,8 @@ data class ChatResponse(
     val response: StructuredResponse,
     val originalMessage: Message.Assistant?,
     val usage: TokenUsage? = null,
-    val model: String? = null
+    val model: String? = null,
+    val mcpCalls: List<String> = emptyList(),
 )
 
 /**

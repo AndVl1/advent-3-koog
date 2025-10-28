@@ -8,9 +8,9 @@ import ai.koog.prompt.structure.StructureFixingParser
 import ru.andvl.chatter.koog.agents.structured.Response
 import ru.andvl.chatter.koog.agents.utils.MAX_CONTEXT_LENGTH
 import ru.andvl.chatter.koog.agents.utils.getLatestTokenUsage
-import ru.andvl.chatter.koog.model.ChatRequest
-import ru.andvl.chatter.koog.model.CompletionStatus
-import ru.andvl.chatter.koog.model.StructuredResponse
+import ru.andvl.chatter.koog.model.structured.ChatRequest
+import ru.andvl.chatter.koog.model.structured.CompletionStatus
+import ru.andvl.chatter.koog.model.structured.StructuredResponse
 
 internal fun AIAgentGraphStrategyBuilder<ChatRequest, Response>.finalAnswerSubgraph(): AIAgentSubgraphDelegate<Triple<CompletionStatus, ChatRequest, Response>, Response> =
     subgraph<Triple<CompletionStatus, ChatRequest, Response>, Response>("final-answer") {

@@ -22,8 +22,8 @@ import ru.andvl.chatter.backend.dto.ChatRequestDto
 import ru.andvl.chatter.backend.dto.ChatResponseDto
 import ru.andvl.chatter.koog.mapping.toKoogMessages
 import ru.andvl.chatter.koog.mapping.toSharedResponse
-import ru.andvl.chatter.koog.model.ChatRequest
-import ru.andvl.chatter.koog.model.ChatResponse
+import ru.andvl.chatter.koog.model.structured.ChatRequest
+import ru.andvl.chatter.koog.model.structured.ChatResponse
 import ru.andvl.chatter.koog.service.KoogServiceFactory
 import ru.andvl.chatter.koog.service.Provider
 import kotlin.random.Random

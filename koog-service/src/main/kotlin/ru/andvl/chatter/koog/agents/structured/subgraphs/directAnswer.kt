@@ -8,9 +8,9 @@ import ai.koog.prompt.structure.StructureFixingParser
 import ru.andvl.chatter.koog.agents.structured.Response
 import ru.andvl.chatter.koog.agents.utils.MAX_CONTEXT_LENGTH
 import ru.andvl.chatter.koog.agents.utils.getLatestTokenUsage
-import ru.andvl.chatter.koog.model.ChatRequest
-import ru.andvl.chatter.koog.model.IntentAnalysis
-import ru.andvl.chatter.koog.model.StructuredResponse
+import ru.andvl.chatter.koog.model.structured.ChatRequest
+import ru.andvl.chatter.koog.model.structured.IntentAnalysis
+import ru.andvl.chatter.koog.model.structured.StructuredResponse
 
 internal fun AIAgentGraphStrategyBuilder<ChatRequest, Response>.directAnswerSubgraph(): AIAgentSubgraphDelegate<Pair<IntentAnalysis, ChatRequest>, Response> =
     subgraph<Pair<IntentAnalysis, ChatRequest>, Response>("direct-answer") {
