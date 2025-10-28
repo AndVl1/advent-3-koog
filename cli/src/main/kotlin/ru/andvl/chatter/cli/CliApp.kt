@@ -31,9 +31,6 @@ class ChatterCli : CliktCommand(
         .flag()
         .help("Run in interactive mode")
 
-    private val testTokens by option("-t", "--test-tokens")
-        .flag()
-        .help("Run token usage tests")
 
     private val testSse by option("--sse")
         .flag()
@@ -49,11 +46,6 @@ class ChatterCli : CliktCommand(
                 testSse -> {
                     echo("📡 Testing Server-Sent Events connection...")
                     client.testSseConnection(baseUrl)
-                }
-                testTokens -> {
-                    echo("🧪 Running token usage tests...")
-                    // TODO: Implement token testing when TokenTester is ready
-                    echo("Token testing functionality coming soon!")
                 }
                 interactive -> {
                     val interactiveMode = InteractiveMode(client, baseUrl)

@@ -4,6 +4,7 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.prompt.message.Message
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import ru.andvl.chatter.koog.model.common.TokenUsage
 import ru.andvl.chatter.shared.models.SharedCheckListItem
 
 /**
@@ -26,15 +27,6 @@ data class ChatResponse(
     val usage: TokenUsage? = null,
     val model: String? = null,
     val mcpCalls: List<String> = emptyList(),
-)
-
-/**
- * Token usage information
- */
-data class TokenUsage(
-    val promptTokens: Int,
-    val completionTokens: Int,
-    val totalTokens: Int
 )
 
 @LLMDescription("Simple structured LLM Response")
