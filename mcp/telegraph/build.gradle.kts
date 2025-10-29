@@ -1,33 +1,31 @@
 plugins {
     // Apply the shared build logic from a convention plugin.
     // The shared code is located in `buildSrc/src/main/kotlin/kotlin-jvm.gradle.kts`.
-//    id("buildsrc.convention.kotlin-jvm")
-    id("application")
     kotlin("jvm")
 
     // Kotlin Serialization
     alias(libs.plugins.kotlin.plugin.serialization)
-    
+
     // Shadow JAR plugin
     alias(libs.plugins.shadow.jar)
 }
 
-application {
-    mainClass.set("ru.andvl.mcp.KotlinMcpTestKt")
-}
-
 // Configure shadow JAR
 tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
-    archiveBaseName.set("mcp-test")
+    archiveBaseName.set("telegraph")
     archiveClassifier.set("")
     archiveVersion.set("0.1.0")
     mergeServiceFiles()
     manifest {
-        attributes["Main-Class"] = "ru.andvl.mcp.KotlinMcpTestKt"
+        attributes["Main-Class"] = "ru.andvl.mcp.telegraph.MainKt"
     }
 }
 
+group = "ru.andvl.mcp.telegraph"
+version = "0.1.0"
+
 dependencies {
+    // Ktor HTTP Client
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.content.negotiation)
@@ -42,10 +40,7 @@ dependencies {
     // Dotenv for configuration
     implementation(libs.dotenv)
 
-    // Koog LLM Client (real dependency)
-    implementation(libs.koog.agents)
-
-    // MCP SDK
     implementation(libs.mcp.kotlin)
+
     implementation(libs.logback.classic)
 }
