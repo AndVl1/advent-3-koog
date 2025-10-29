@@ -36,8 +36,60 @@ data class GitHubBranch(
 data class GitHubCommit(
     val sha: String,
     val message: String,
-    val author: String,
+    val author: GitHubCommitAuthor,
+    val committer: GitHubCommitAuthor,
+    val date: String,
+    val url: String? = null,
+    val stats: GitHubCommitStats? = null
+)
+
+/**
+ * Автор коммита
+ */
+@Serializable
+data class GitHubCommitAuthor(
+    val name: String,
+    val email: String,
     val date: String
+)
+
+/**
+ * Статистика коммита
+ */
+@Serializable
+data class GitHubCommitStats(
+    val additions: Int,
+    val deletions: Int,
+    val total: Int
+)
+
+/**
+ * Детали коммита с изменениями файлов
+ */
+@Serializable
+data class GitHubCommitDetails(
+    val sha: String,
+    val message: String,
+    val author: GitHubCommitAuthor,
+    val committer: GitHubCommitAuthor,
+    val date: String,
+    val url: String,
+    val stats: GitHubCommitStats,
+    val files: List<GitHubCommitFile>
+)
+
+/**
+ * Файл изменённый в коммите
+ */
+@Serializable
+data class GitHubCommitFile(
+    val filename: String,
+    val status: String, // "added", "modified", "removed", "renamed"
+    val additions: Int,
+    val deletions: Int,
+    val changes: Int,
+    val patch: String? = null,
+    val previousFilename: String? = null // for renamed files
 )
 
 /**
@@ -77,4 +129,33 @@ data class GitHubTreeItem(
     val type: String, // "tree", "blob"
     val sha: String,
     val size: Long? = null
+)
+
+/**
+ * Статистика активности автора
+ */
+@Serializable
+data class GitHubAuthorStats(
+    val author: String,
+    val email: String,
+    val commitCount: Int,
+    val totalAdditions: Int,
+    val totalDeletions: Int,
+    val firstCommit: String,
+    val lastCommit: String
+)
+
+/**
+ * Сводка изменений в репозитории
+ */
+@Serializable
+data class GitHubRepositorySummary(
+    val repository: String,
+    val period: String,
+    val totalCommits: Int,
+    val totalAuthors: Int,
+    val totalAdditions: Int,
+    val totalDeletions: Int,
+    val authorStats: List<GitHubAuthorStats>,
+    val topChangedFiles: List<String>
 )

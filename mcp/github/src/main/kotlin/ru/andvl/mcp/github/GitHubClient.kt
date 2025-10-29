@@ -270,6 +270,218 @@ class GitHubClient(private val token: String? = null) {
     }
 
     /**
+     * Получить список коммитов
+     */
+    suspend fun getCommits(
+        owner: String, 
+        repo: String, 
+        since: String? = null, 
+        until: String? = null, 
+        sha: String? = null,
+        path: String? = null,
+        perPage: Int = 30,
+        page: Int = 1
+    ): List<GitHubCommit>? {
+        return try {
+            val response = httpClient.get("https://api.github.com/repos/$owner/$repo/commits") {
+                token?.let {
+                    header("Authorization", "Bearer $it")
+                }
+                parameter("per_page", perPage)
+                parameter("page", page)
+                since?.let { parameter("since", it) }
+                until?.let { parameter("until", it) }
+                sha?.let { parameter("sha", it) }
+                path?.let { parameter("path", it) }
+            }
+
+            if (response.status != HttpStatusCode.OK) {
+                logger.warn("Error getting commits: ${response.status}")
+                return null
+            }
+
+            val commitsData = response.body<List<GitHubCommitResponse>>()
+            commitsData.map { commit ->
+                GitHubCommit(
+                    sha = commit.sha,
+                    message = commit.commit.message,
+                    author = GitHubCommitAuthor(
+                        name = commit.commit.author.name,
+                        email = commit.commit.author.email,
+                        date = commit.commit.author.date
+                    ),
+                    committer = GitHubCommitAuthor(
+                        name = commit.commit.committer.name,
+                        email = commit.commit.committer.email,
+                        date = commit.commit.committer.date
+                    ),
+                    date = commit.commit.author.date,
+                    url = commit.html_url
+                )
+            }
+        } catch (e: Exception) {
+            logger.error("Error fetching commits: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
+     * Получить детали конкретного коммита
+     */
+    suspend fun getCommitDetails(owner: String, repo: String, sha: String): GitHubCommitDetails? {
+        return try {
+            val response = httpClient.get("https://api.github.com/repos/$owner/$repo/commits/$sha") {
+                token?.let {
+                    header("Authorization", "Bearer $it")
+                }
+            }
+
+            if (response.status != HttpStatusCode.OK) {
+                logger.warn("Error getting commit details: ${response.status}")
+                return null
+            }
+
+            val commitData = response.body<GitHubCommitDetailsResponse>()
+            GitHubCommitDetails(
+                sha = commitData.sha,
+                message = commitData.commit.message,
+                author = GitHubCommitAuthor(
+                    name = commitData.commit.author.name,
+                    email = commitData.commit.author.email,
+                    date = commitData.commit.author.date
+                ),
+                committer = GitHubCommitAuthor(
+                    name = commitData.commit.committer.name,
+                    email = commitData.commit.committer.email,
+                    date = commitData.commit.committer.date
+                ),
+                date = commitData.commit.author.date,
+                url = commitData.html_url,
+                stats = GitHubCommitStats(
+                    additions = commitData.stats.additions,
+                    deletions = commitData.stats.deletions,
+                    total = commitData.stats.total
+                ),
+                files = commitData.files.map { file ->
+                    GitHubCommitFile(
+                        filename = file.filename,
+                        status = file.status,
+                        additions = file.additions,
+                        deletions = file.deletions,
+                        changes = file.changes,
+                        patch = file.patch,
+                        previousFilename = file.previous_filename
+                    )
+                }
+            )
+        } catch (e: Exception) {
+            logger.error("Error fetching commit details: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
+     * Получить изменения в репозитории за определенный период
+     */
+    suspend fun getRepositoryChanges(
+        owner: String, 
+        repo: String, 
+        since: String, 
+        until: String? = null
+    ): List<GitHubCommit>? {
+        return getCommits(owner, repo, since, until, perPage = 100)
+    }
+
+    /**
+     * Получить сводку активности в репозитории за период
+     */
+    suspend fun getRepositorySummary(
+        owner: String,
+        repo: String,
+        since: String,
+        until: String? = null
+    ): GitHubRepositorySummary? {
+        return try {
+            // Получить все коммиты за период
+            val commits = mutableListOf<GitHubCommit>()
+            var page = 1
+            val perPage = 100
+            
+            while (true) {
+                val pageCommits = getCommits(owner, repo, since, until, perPage = perPage, page = page)
+                    ?: break
+                
+                if (pageCommits.isEmpty()) break
+                commits.addAll(pageCommits)
+                
+                if (pageCommits.size < perPage) break
+                page++
+            }
+
+            if (commits.isEmpty()) return null
+
+            // Получить детали коммитов с файлами (ограничиваем первыми 50 для производительности)
+            val commitDetails = mutableListOf<GitHubCommitDetails>()
+            val maxDetailsToFetch = minOf(50, commits.size)
+            
+            for (i in 0 until maxDetailsToFetch) {
+                val details = getCommitDetails(owner, repo, commits[i].sha)
+                if (details != null) {
+                    commitDetails.add(details)
+                }
+            }
+
+            // Анализ по авторам
+            val authorStatsMap = mutableMapOf<String, MutableList<GitHubCommitDetails>>()
+            commitDetails.forEach { commit ->
+                val authorKey = "${commit.author.name} (${commit.author.email})"
+                authorStatsMap.getOrPut(authorKey) { mutableListOf() }.add(commit)
+            }
+
+            val authorStats = authorStatsMap.map { (authorKey, commits) ->
+                val author = commits.first().author
+                GitHubAuthorStats(
+                    author = author.name,
+                    email = author.email,
+                    commitCount = commits.size,
+                    totalAdditions = commits.sumOf { it.stats.additions },
+                    totalDeletions = commits.sumOf { it.stats.deletions },
+                    firstCommit = commits.minByOrNull { it.date }?.date ?: "",
+                    lastCommit = commits.maxByOrNull { it.date }?.date ?: ""
+                )
+            }.sortedByDescending { it.commitCount }
+
+            // Топ изменённых файлов
+            val fileChanges = mutableMapOf<String, Int>()
+            commitDetails.forEach { commit ->
+                commit.files.forEach { file ->
+                    fileChanges[file.filename] = fileChanges.getOrDefault(file.filename, 0) + file.changes
+                }
+            }
+            val topChangedFiles = fileChanges.toList()
+                .sortedByDescending { it.second }
+                .take(10)
+                .map { it.first }
+
+            val period = if (until != null) "$since to $until" else "since $since"
+
+            GitHubRepositorySummary(
+                repository = "$owner/$repo",
+                period = period,
+                totalCommits = commits.size,
+                totalAuthors = authorStats.size,
+                totalAdditions = commitDetails.sumOf { it.stats.additions },
+                totalDeletions = commitDetails.sumOf { it.stats.deletions },
+                authorStats = authorStats,
+                topChangedFiles = topChangedFiles
+            )
+        } catch (e: Exception) {
+            logger.error("Error creating repository summary: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
      * Получить SHA коммита ветки
      */
     private suspend fun getBranchSha(owner: String, repo: String, branch: String): String? {
@@ -358,4 +570,52 @@ private data class GitHubTreeItemResponse(
     val type: String,
     val sha: String,
     val size: Long? = null
+)
+
+@Serializable
+private data class GitHubCommitResponse(
+    val sha: String,
+    val commit: GitHubCommitDataResponse,
+    val html_url: String? = null
+)
+
+@Serializable
+private data class GitHubCommitDataResponse(
+    val message: String,
+    val author: GitHubCommitAuthorResponse,
+    val committer: GitHubCommitAuthorResponse
+)
+
+@Serializable
+private data class GitHubCommitAuthorResponse(
+    val name: String,
+    val email: String,
+    val date: String
+)
+
+@Serializable
+private data class GitHubCommitDetailsResponse(
+    val sha: String,
+    val commit: GitHubCommitDataResponse,
+    val html_url: String,
+    val stats: GitHubCommitStatsResponse,
+    val files: List<GitHubCommitFileResponse>
+)
+
+@Serializable
+private data class GitHubCommitStatsResponse(
+    val additions: Int,
+    val deletions: Int,
+    val total: Int
+)
+
+@Serializable
+private data class GitHubCommitFileResponse(
+    val filename: String,
+    val status: String,
+    val additions: Int,
+    val deletions: Int,
+    val changes: Int,
+    val patch: String? = null,
+    val previous_filename: String? = null
 )

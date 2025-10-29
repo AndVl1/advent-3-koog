@@ -12,11 +12,16 @@ object MarkdownConverter {
      * Convert Markdown string to Telegraph nodes
      */
     fun markdownToNodes(markdown: String): List<TelegraphNode> {
+        if (markdown.isBlank()) return emptyList()
+        
         val lines = markdown.split("\n")
         val nodes = mutableListOf<TelegraphNode>()
         var i = 0
+        val maxIterations = lines.size * 3 // Safety guard
         
-        while (i < lines.size) {
+        var currentIteration = 0
+        while (i < lines.size && currentIteration < maxIterations) {
+            currentIteration++
             val line = lines[i]
             
             when {
@@ -68,9 +73,9 @@ object MarkdownConverter {
                 }
                 
                 // Lists
-                Regex("^[\\*\\-\\+]\\s+").matches(line.trim()) -> {
+                Regex("^[\\-\\*\\+]\\s+").matches(line.trim()) -> {
                     val listItems = mutableListOf<String>()
-                    while (i < lines.size && Regex("^[\\*\\-\\+]\\s+").matches(lines[i].trim())) {
+                    while (i < lines.size && Regex("^[\\-\\*\\+]\\s+").matches(lines[i].trim())) {
                         listItems.add(lines[i].trim().substring(2))
                         i++
                     }
@@ -118,18 +123,22 @@ object MarkdownConverter {
     private fun parseInlineFormatting(text: String): List<TelegraphNode> {
         val nodes = mutableListOf<TelegraphNode>()
         var remaining = text
+        var iterations = 0
+        val maxIterations = text.length * 2 // Safety guard against infinite loops
         
         // Links [text](url)
         val linkRegex = """\[([^\]]+)\]\(([^)]+)\)""".toRegex()
-        // Bold **text**
-        val boldRegex = """\*\*([^*]+)\*\*""".toRegex()
-        // Italic *text*
-        val italicRegex = """\*([^*]+)\*""".toRegex()
+        // Bold **text** - non-greedy
+        val boldRegex = """\*\*([^*]+?)\*\*""".toRegex()
+        // Italic *text* - but not inside bold, non-greedy
+        val italicRegex = """(?<!\*)\*([^*]+?)\*(?!\*)""".toRegex()
         // Code `text`
-        val codeRegex = """`([^`]+)`""".toRegex()
+        val codeRegex = """`([^`]+?)`""".toRegex()
         
         // Process in order: links, bold, italic, code
-        while (remaining.isNotEmpty()) {
+        while (remaining.isNotEmpty() && iterations < maxIterations) {
+            iterations++
+            
             val linkMatch = linkRegex.find(remaining)
             val boldMatch = boldRegex.find(remaining)
             val italicMatch = italicRegex.find(remaining)
@@ -184,6 +193,12 @@ object MarkdownConverter {
                     remaining = remaining.substring(firstMatch.match.range.last + 1)
                 }
             }
+        }
+        
+        // Safety check for infinite loops
+        if (iterations >= maxIterations) {
+            // Return original text as paragraph if parsing fails
+            return listOf(TelegraphNode("p", listOf(text)))
         }
         
         return nodes.ifEmpty { listOf(TelegraphNode("p", listOf(text))) }
