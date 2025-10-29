@@ -153,6 +153,7 @@ fun Application.configureFrameworks() {
 
                     val githubResponse = GithubAnalysisResponse(
                         analysis = response.analysis,
+                        tldr = response.tldr,
                         toolCalls = response.toolCalls,
                         model = response.model,
                         usage = response.usage?.let { usage ->

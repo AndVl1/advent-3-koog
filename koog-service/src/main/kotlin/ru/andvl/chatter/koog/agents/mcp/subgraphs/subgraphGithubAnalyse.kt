@@ -158,7 +158,10 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
 
             val response = requestLLMStructured<GithubRepositoryAnalysisModel>(
                 examples = listOf(
-                    GithubRepositoryAnalysisModel.SuccessAnalysisModel("The repository userName/repoName is about something"),
+                    GithubRepositoryAnalysisModel.SuccessAnalysisModel(
+                        freeFormAnswer = "The repository userName/repoName is about something",
+                        shortSummary = "Short info"
+                    ),
                     GithubRepositoryAnalysisModel.FailedAnalysisModel("Request was failed because of ...")
                 ),
                 fixingParser = StructureFixingParser(
@@ -177,7 +180,14 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
             if (response.isSuccess) {
                 val resp = response.getOrThrow()
                 ToolChatResponse(
-                    response = resp.structure.toString(),
+                    response = when (val structure = resp.structure) {
+                        is GithubRepositoryAnalysisModel.FailedAnalysisModel -> structure.reason
+                        is GithubRepositoryAnalysisModel.SuccessAnalysisModel -> structure.freeFormAnswer
+                    },
+                    shortSummary = when (val structure = resp.structure) {
+                        is GithubRepositoryAnalysisModel.FailedAnalysisModel -> "Request failed"
+                        is GithubRepositoryAnalysisModel.SuccessAnalysisModel -> structure.shortSummary
+                    },
                     toolCalls = totalToolCalls,
                     originalMessage = resp.message,
                     tokenUsage = TokenUsage(
@@ -190,6 +200,7 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
             } else {
                 ToolChatResponse(
                     response = "Request finished with error: ${response.exceptionOrNull()?.message}",
+                    shortSummary = "Request failed",
                     toolCalls = totalToolCalls,
                     originalMessage = null,
                     tokenUsage = TokenUsage(0, 0, 0)

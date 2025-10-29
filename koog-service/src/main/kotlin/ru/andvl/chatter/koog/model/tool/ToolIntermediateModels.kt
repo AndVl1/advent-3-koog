@@ -43,7 +43,10 @@ internal sealed interface GithubRepositoryAnalysisModel {
     data class SuccessAnalysisModel(
         @property:LLMDescription("Free-form github analysis result. Include as much structure as possible. Field named free_form_github_analysis")
         @SerialName("free_form_github_analysis")
-        val freeFormAnswer: String
+        val freeFormAnswer: String,
+        @property:LLMDescription("TLDR of full answer")
+        @SerialName("tldr")
+        val shortSummary: String,
     ) : GithubRepositoryAnalysisModel {
         override fun toString(): String {
             return freeFormAnswer

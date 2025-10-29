@@ -3,6 +3,7 @@ package ru.andvl.chatter.koog.service
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.ktor.llm
 import ai.koog.prompt.executor.clients.google.GoogleModels
@@ -26,6 +27,7 @@ import ru.andvl.chatter.koog.model.structured.ChatRequest
 import ru.andvl.chatter.koog.model.structured.ChatResponse
 import ru.andvl.chatter.koog.model.structured.StructuredResponse
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
+import ru.andvl.chatter.koog.tools.CurrentTimeToolSet
 import ru.andvl.chatter.shared.models.ChatHistory
 import ru.andvl.chatter.shared.models.github.GithubAnalysisRequest
 
@@ -149,6 +151,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 ),
                 contextLength = 16_000, //
             )
+
             else -> OpenRouterModels.Gemini2_5Flash
         }
         return withContext(Dispatchers.IO) {
@@ -225,6 +228,9 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         return withContext(Dispatchers.IO) {
             val mcpClient = GithubMcpProvider.getClient()
             val toolRegistry = McpToolRegistryProvider.fromClient(mcpClient)
+                .plus(ToolRegistry {
+                    tools(CurrentTimeToolSet())
+                })
             val strategy = getGithubAnalysisStrategy()
             val model = LLModel(
                 provider = LLMProvider.OpenRouter,
@@ -270,6 +276,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
 
                 GithubAnalysisResponse(
                     analysis = result.response,
+                    tldr = result.shortSummary,
                     toolCalls = result.toolCalls,
                     model = null,
                     usage = result.tokenUsage
@@ -277,6 +284,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             } catch (e: Exception) {
                 GithubAnalysisResponse(
                     analysis = "Analysis failed with exception: ${e.message}",
+                    tldr = "Analysis failed",
                     toolCalls = emptyList(),
                     model = null,
                     usage = TokenUsage(0, 0, 0)
