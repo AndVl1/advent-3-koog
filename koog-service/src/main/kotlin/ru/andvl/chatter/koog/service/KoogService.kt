@@ -3,6 +3,7 @@ package ru.andvl.chatter.koog.service
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.ktor.llm
 import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.clients.openrouter.OpenRouterModels
@@ -14,17 +15,75 @@ import ai.koog.prompt.structure.executeStructured
 import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import ru.andvl.chatter.koog.agents.mcp.getGithubAnalysisStrategy
+import ru.andvl.chatter.koog.agents.mcp.getToolAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
-import ru.andvl.chatter.koog.model.ChatRequest
-import ru.andvl.chatter.koog.model.ChatResponse
-import ru.andvl.chatter.koog.model.StructuredResponse
-import ru.andvl.chatter.koog.model.TokenUsage
+import ru.andvl.chatter.koog.mcp.GithubMcpProvider
+import ru.andvl.chatter.koog.model.common.TokenUsage
+import ru.andvl.chatter.koog.model.github.GithubAnalysisResponse
+import ru.andvl.chatter.koog.model.structured.ChatRequest
+import ru.andvl.chatter.koog.model.structured.ChatResponse
+import ru.andvl.chatter.koog.model.structured.StructuredResponse
+import ru.andvl.chatter.koog.model.tool.GithubChatRequest
+import ru.andvl.chatter.shared.models.ChatHistory
+import ru.andvl.chatter.shared.models.github.GithubAnalysisRequest
 
 /**
  * Koog service - independent service for LLM interaction with context support
  */
 class KoogService {
+
+    private fun buildGithubSystemPrompt(): String {
+        return """
+            You are a specialized GitHub repository analyzer AI assistant.
+            
+            Your primary task is to analyze GitHub repositories and provide comprehensive, structured information based on user requests.
+            
+            **Core Responsibilities:**
+            1. Extract and validate GitHub repository URLs from user requests
+            2. Understand user's specific analysis needs and questions
+            3. Use available MCP tools to gather repository information
+            4. Provide structured, detailed analysis with clear sections
+            
+            **Analysis Process:**
+            1. **Initial Request Analysis**: Parse user request to extract:
+               - GitHub repository URL
+               - Specific information the user wants to know
+               - Type of analysis requested (overview, technical details, code quality, etc.)
+            
+            2. **Repository Information Gathering**: Use MCP tools to collect:
+               - Basic repository metadata (name, description, stars, forks, license)
+               - README content and documentation
+               - File structure and project organization
+               - Dependencies and build configuration
+               - Recent activity and commit history
+               - Code samples and architecture insights
+            
+            3. **Structured Response**: Present findings in organized sections:
+               - Repository Overview
+               - Technical Stack & Dependencies
+               - Project Structure
+               - Key Features & Functionality
+               - Code Quality & Best Practices
+               - Recent Activity & Maintenance
+               - Recommendations or specific answers to user questions
+            
+            **Response Guidelines:**
+            - Be comprehensive but focused on user's specific questions
+            - Use clear, professional language
+            - Include relevant code snippets or examples when helpful
+            - Provide actionable insights and recommendations
+            - If information is not available, clearly state what couldn't be accessed
+            
+            **Error Handling:**
+            - If repository URL is invalid or inaccessible, explain the issue clearly
+            - If user request is unclear, ask for clarification
+            - If tools fail, explain what information could not be retrieved
+            
+            Always maintain a helpful, analytical tone and provide value to developers seeking to understand GitHub repositories.
+        """.trimIndent()
+    }
 
     private fun buildSystemPrompt(request: ChatRequest): String {
         val basePrompt = """ BASE PROMPT:
@@ -155,6 +214,73 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 } catch (e2: Exception) {
                     throw Exception("Both providers failed: ${e2.message}", e2)
                 }
+            }
+        }
+    }
+
+    suspend fun analyseGithub(
+        routingContext: RoutingContext,
+        request: GithubAnalysisRequest,
+    ): GithubAnalysisResponse {
+        return withContext(Dispatchers.IO) {
+            val mcpClient = GithubMcpProvider.getClient()
+            val toolRegistry = McpToolRegistryProvider.fromClient(mcpClient)
+            val strategy = getGithubAnalysisStrategy()
+            val model = LLModel(
+                provider = LLMProvider.OpenRouter,
+                id = "z-ai/glm-4.6",
+                capabilities = listOf(
+                    LLMCapability.Temperature,
+                    LLMCapability.Completion,
+                    LLMCapability.Tools,
+                ),
+                contextLength = 128_000,
+            )
+
+            val systemPrompt = buildGithubSystemPrompt()
+            val prompt = getToolAgentPrompt(
+                systemPrompt = systemPrompt,
+                request = ChatRequest(message = request.userMessage),
+                temperature = 0.3
+            )
+
+            val agentConfig = AIAgentConfig(
+                prompt = prompt,
+                model = model,
+                maxAgentIterations = 100,
+            )
+
+            val agent = AIAgent(
+                promptExecutor = routingContext.llm(),
+                agentConfig = agentConfig,
+                strategy = strategy,
+                toolRegistry = toolRegistry,
+                id = "github-analyzer",
+                installFeatures = {}
+            )
+
+            val githubRequest = GithubChatRequest(
+                message = request.userMessage,
+                systemPrompt = systemPrompt,
+                history = ChatHistory()
+            )
+
+            try {
+                val result = agent.run(githubRequest)
+
+                GithubAnalysisResponse(
+                    analysis = result.response,
+                    toolCalls = result.toolCalls,
+                    model = null,
+                    usage = result.tokenUsage
+                )
+            } catch (e: Exception) {
+                GithubAnalysisResponse(
+                    analysis = "Analysis failed with exception: ${e.message}",
+                    toolCalls = emptyList(),
+                    model = null,
+                    usage = TokenUsage(0, 0, 0)
+                )
             }
         }
     }

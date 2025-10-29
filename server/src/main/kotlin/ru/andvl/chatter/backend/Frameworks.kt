@@ -22,10 +22,12 @@ import ru.andvl.chatter.backend.dto.ChatRequestDto
 import ru.andvl.chatter.backend.dto.ChatResponseDto
 import ru.andvl.chatter.koog.mapping.toKoogMessages
 import ru.andvl.chatter.koog.mapping.toSharedResponse
-import ru.andvl.chatter.koog.model.ChatRequest
-import ru.andvl.chatter.koog.model.ChatResponse
+import ru.andvl.chatter.koog.model.structured.ChatRequest
+import ru.andvl.chatter.koog.model.structured.ChatResponse
 import ru.andvl.chatter.koog.service.KoogServiceFactory
 import ru.andvl.chatter.koog.service.Provider
+import ru.andvl.chatter.shared.models.github.GithubAnalysisRequest
+import ru.andvl.chatter.shared.models.github.GithubAnalysisResponse
 import kotlin.random.Random
 
 @Serializable
@@ -134,6 +136,38 @@ fun Application.configureFrameworks() {
                     ))
                 } catch (e: Exception) {
                     log.error("Error processing AI context request", e)
+                    call.respond(
+                        HttpStatusCode.InternalServerError,
+                        mapOf("error" to (e.message ?: "Unknown error"))
+                    )
+                }
+            }
+
+            post("/analyze-github") {
+                try {
+                    val request = call.receive<GithubAnalysisRequest>()
+                    log.info("Received GitHub analysis request: ${request.userMessage.take(100)}...")
+
+                    val koogService = KoogServiceFactory.createFromEnv()
+                    val response = koogService.analyseGithub(this, request)
+
+                    val githubResponse = GithubAnalysisResponse(
+                        analysis = response.analysis,
+                        toolCalls = response.toolCalls,
+                        model = response.model,
+                        usage = response.usage?.let { usage ->
+                            ru.andvl.chatter.shared.models.github.TokenUsageDto(
+                                promptTokens = usage.promptTokens,
+                                completionTokens = usage.completionTokens,
+                                totalTokens = usage.totalTokens
+                            )
+                        }
+                    )
+
+                    log.info("GitHub analysis completed successfully")
+                    call.respond(HttpStatusCode.OK, githubResponse)
+                } catch (e: Exception) {
+                    log.error("Error processing GitHub analysis request", e)
                     call.respond(
                         HttpStatusCode.InternalServerError,
                         mapOf("error" to (e.message ?: "Unknown error"))

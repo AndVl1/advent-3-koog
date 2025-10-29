@@ -11,7 +11,7 @@ import ai.koog.prompt.params.LLMParams
 import ru.andvl.chatter.koog.agents.structured.subgraphs.*
 import ru.andvl.chatter.koog.agents.utils.isHistoryTooLong
 import ru.andvl.chatter.koog.agents.utils.nodeLLMCPrintCompressedHistory
-import ru.andvl.chatter.koog.model.*
+import ru.andvl.chatter.koog.model.structured.*
 import ai.koog.prompt.structure.StructuredResponse as StructuredResponseKoog
 
 internal typealias Response = Result<StructuredResponseKoog<StructuredResponse>>

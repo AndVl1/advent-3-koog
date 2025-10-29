@@ -166,4 +166,14 @@ object ColorPrinter {
     fun printTokenUsage(usage: TokenUsageDto) {
         println("$CYAN📊 Tokens: ${usage.promptTokens} prompt + ${usage.completionTokens} completion = ${usage.totalTokens} total$RESET")
     }
+
+    fun printInfo(message: String) {
+        val wrappedMessage = TextWrapper.wrap(message, 80)
+        println("$CYAN$wrappedMessage$RESET")
+    }
+
+    fun printSuccess(message: String) {
+        val wrappedMessage = TextWrapper.wrap(message, 80)
+        println("$GREEN$wrappedMessage$RESET")
+    }
 }

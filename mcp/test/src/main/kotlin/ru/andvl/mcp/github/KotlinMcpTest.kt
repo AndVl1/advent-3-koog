@@ -90,10 +90,10 @@ fun main() = runBlocking {
 
     try {
         println("🔍 Получение списка инструментов...")
-        val toolsList = client.listTools()?.tools?.map { it.name }
+        val toolsList = client.listTools().tools.map { it.name }
         println("Available Tools = $toolsList")
 
-        if (toolsList?.contains("hello-world") == true) {
+        if (toolsList.contains("hello-world")) {
             println("🔧 Вызов инструмента hello-world...")
             val result = client.callTool("hello-world", mapOf("name" to "Andrey"))
                 ?.content?.map { if (it is TextContent) it.text else it.toString() }
@@ -103,7 +103,7 @@ fun main() = runBlocking {
             println("⚠️ Инструмент hello-world не найден")
         }
 
-        if (toolsList?.contains("get-repo-base-info") == true) {
+        if (toolsList.contains("get-repo-base-info")) {
             println("🔧 Вызов инструмента get-repo-base-info...")
             val result = client.callTool("get-repo-base-info", mapOf(
                 "repository" to "AndVl1/SnakeGame"

@@ -1,4 +1,4 @@
-package ru.andvl.chatter.koog.model
+package ru.andvl.chatter.koog.model.structured
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.serialization.Serializable
@@ -9,7 +9,6 @@ import kotlinx.serialization.Serializable
 internal data class IntentAnalysis(
     @property:LLMDescription("How to respond to the user")
     val intentType: IntentType, // "DIRECT_ANSWER", "COLLECT_INFO
-
 )
 
 @Serializable

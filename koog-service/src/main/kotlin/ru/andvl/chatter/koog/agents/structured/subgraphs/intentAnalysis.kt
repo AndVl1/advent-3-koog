@@ -8,8 +8,8 @@ import ai.koog.prompt.structure.StructureFixingParser
 import ru.andvl.chatter.koog.agents.structured.Response
 import ru.andvl.chatter.koog.agents.utils.MAX_CONTEXT_LENGTH
 import ru.andvl.chatter.koog.agents.utils.getLatestTokenUsage
-import ru.andvl.chatter.koog.model.ChatRequest
-import ru.andvl.chatter.koog.model.IntentAnalysis
+import ru.andvl.chatter.koog.model.structured.ChatRequest
+import ru.andvl.chatter.koog.model.structured.IntentAnalysis
 
 internal fun AIAgentGraphStrategyBuilder<ChatRequest, Response>.intentAnalysisSubgraph(): AIAgentSubgraphDelegate<ChatRequest, Pair<IntentAnalysis, ChatRequest>> =
     subgraph<ChatRequest, Pair<IntentAnalysis, ChatRequest>>("intent-analysis") {

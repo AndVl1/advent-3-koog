@@ -36,3 +36,32 @@ data class TokenUsageDto(
     val completionTokens: Int,
     val totalTokens: Int
 )
+
+/**
+ * GitHub analysis request DTO
+ */
+@Serializable
+data class GithubAnalysisRequest(
+    val userMessage: String
+)
+
+/**
+ * GitHub analysis response DTO
+ */
+@Serializable
+data class GithubAnalysisResponse(
+    val analysis: String,
+    val toolCalls: List<String>,
+    val model: String? = null,
+    val usage: GithubTokenUsageDto? = null
+)
+
+/**
+ * GitHub Token usage DTO
+ */
+@Serializable
+data class GithubTokenUsageDto(
+    val promptTokens: Int,
+    val completionTokens: Int,
+    val totalTokens: Int
+)

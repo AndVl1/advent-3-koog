@@ -14,10 +14,10 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.coroutines.core)
-    
+
     // Logging
     implementation(libs.logback.classic)
-    
+
     testImplementation(libs.kotlin.test.junit)
 }
 

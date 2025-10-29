@@ -4,8 +4,8 @@ import ai.koog.agents.core.dsl.builder.AIAgentGraphStrategyBuilder
 import ai.koog.agents.core.dsl.builder.AIAgentSubgraphDelegate
 import ai.koog.agents.core.dsl.builder.forwardTo
 import ru.andvl.chatter.koog.agents.structured.Response
-import ru.andvl.chatter.koog.model.ChatRequest
-import ru.andvl.chatter.koog.model.CompletionStatus
+import ru.andvl.chatter.koog.model.structured.ChatRequest
+import ru.andvl.chatter.koog.model.structured.CompletionStatus
 
 internal fun AIAgentGraphStrategyBuilder<ChatRequest, Response>.completionCheckSubgraph(): AIAgentSubgraphDelegate<Pair<Response, ChatRequest>, Triple<CompletionStatus, ChatRequest, Response>> =
     subgraph<Pair<Response, ChatRequest>, Triple<CompletionStatus, ChatRequest, Response>>("completion-check") {

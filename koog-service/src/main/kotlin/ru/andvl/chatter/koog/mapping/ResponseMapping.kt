@@ -1,7 +1,7 @@
 package ru.andvl.chatter.koog.mapping
 
-import ru.andvl.chatter.koog.model.CheckListItem
-import ru.andvl.chatter.koog.model.StructuredResponse
+import ru.andvl.chatter.koog.model.structured.CheckListItem
+import ru.andvl.chatter.koog.model.structured.StructuredResponse
 import ru.andvl.chatter.shared.models.SharedCheckListItem
 import ru.andvl.chatter.shared.models.SharedStructuredResponse
 
