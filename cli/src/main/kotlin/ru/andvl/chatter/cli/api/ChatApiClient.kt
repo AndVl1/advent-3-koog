@@ -11,9 +11,7 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 import ru.andvl.chatter.cli.history.ChatHistory
-import ru.andvl.chatter.cli.models.ChatContextRequest
-import ru.andvl.chatter.cli.models.ChatResponseDto
-import ru.andvl.chatter.cli.models.StructuredResponse
+import ru.andvl.chatter.cli.models.*
 import ru.andvl.chatter.cli.ui.ColorPrinter
 
 class ChatApiClient {
@@ -149,6 +147,49 @@ class ChatApiClient {
             }
         } catch (e: Exception) {
             ColorPrinter.printConnectionError(e.message ?: "Unknown SSE error", baseUrl)
+        }
+    }
+
+    suspend fun analyzeGithub(
+        baseUrl: String,
+        message: String
+    ): GithubAnalysisResponse? {
+        ColorPrinter.printInfo("🔍 Starting GitHub repository analysis...")
+        ColorPrinter.printInfo("📊 Request: ${message.take(100)}${if (message.length > 100) "..." else ""}")
+
+        return try {
+            val requestBody = GithubAnalysisRequest(userMessage = message)
+
+            val response = client.post("$baseUrl/ai/analyze-github") {
+                contentType(ContentType.Application.Json)
+                setBody(requestBody)
+                timeout {
+                    requestTimeoutMillis = 300_000 // 5 minutes timeout
+                }
+            }
+
+            if (response.status == HttpStatusCode.OK) {
+                val githubResponse = response.body<GithubAnalysisResponse>()
+
+                ColorPrinter.printSuccess("✅ GitHub analysis completed successfully!")
+
+                // Print basic info about the response
+                ColorPrinter.printInfo("📝 Analysis length: ${githubResponse.analysis.length} characters")
+                ColorPrinter.printInfo("🔧 Tool calls made: ${githubResponse.toolCalls.size}")
+
+                githubResponse.usage?.let { usage ->
+                    ColorPrinter.printInfo("🎯 Token usage: ${usage.totalTokens} total (${usage.promptTokens} prompt + ${usage.completionTokens} completion)")
+                }
+
+                githubResponse
+            } else {
+                ColorPrinter.printError("❌ Analysis failed with status: ${response.status}")
+                ColorPrinter.printErrorDetails(response.body())
+                null
+            }
+        } catch (e: Exception) {
+            ColorPrinter.printConnectionError(e.message ?: "Unknown error during GitHub analysis", baseUrl)
+            null
         }
     }
 
