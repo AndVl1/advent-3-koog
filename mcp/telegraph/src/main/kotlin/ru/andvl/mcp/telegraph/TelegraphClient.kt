@@ -9,6 +9,7 @@ import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
 import org.slf4j.LoggerFactory
 
@@ -27,7 +28,7 @@ class TelegraphClient(private val accessToken: String? = null) {
             })
         }
         install(Logging) {
-            level = LogLevel.NONE
+            level = LogLevel.INFO
         }
     }
 
@@ -76,8 +77,8 @@ class TelegraphClient(private val accessToken: String? = null) {
             }
 
             val response = httpClient.post("https://api.telegra.ph/getAccountInfo") {
-                parameter("access_token", accessToken)
                 setBody(FormDataContent(Parameters.build {
+                    append("access_token", accessToken)
                     append("fields", fieldsJson.toString())
                 }))
             }
@@ -139,26 +140,29 @@ class TelegraphClient(private val accessToken: String? = null) {
         returnContent: Boolean = false
     ): TelegraphPage? {
         return try {
-            val response = httpClient.post("https://api.telegra.ph/createPage") {
-                setBody(FormDataContent(Parameters.build {
-                    append("access_token", accessToken)
-                    append("title", title)
-                    authorName?.let { append("author_name", it) }
-                    authorUrl?.let { append("author_url", it) }
-                    append("content", content.toJsonArray().toString())
-                    append("return_content", returnContent.toString())
-                }))
-            }
+            retryWithBackoff(maxRetries = 3) {
+                logger.debug("Creating page with content: ${content.toJsonArray().toString()}")
+                val response = httpClient.post("https://api.telegra.ph/createPage") {
+                    setBody(FormDataContent(Parameters.build {
+                        append("access_token", accessToken)
+                        append("title", title)
+                        authorName?.let { append("author_name", it) }
+                        authorUrl?.let { append("author_url", it) }
+                        append("content", content.toJsonArray().toString())
+                        append("return_content", returnContent.toString())
+                    }))
+                }
 
-            val apiResponse = response.body<TelegraphResponse<TelegraphPage>>()
-            if (apiResponse.ok && apiResponse.result != null) {
-                apiResponse.result
-            } else {
-                logger.error("Error creating page: ${apiResponse.error}")
-                null
+                val apiResponse = response.body<TelegraphResponse<TelegraphPage>>()
+                if (apiResponse.ok && apiResponse.result != null) {
+                    apiResponse.result
+                } else {
+                    logger.error("Error creating page: ${apiResponse.error}")
+                    null
+                }
             }
         } catch (e: Exception) {
-            logger.error("Error creating page: ${e.message}", e)
+            logger.error("Error creating page after retries: ${e.message}", e)
             null
         }
     }
@@ -176,6 +180,7 @@ class TelegraphClient(private val accessToken: String? = null) {
         returnContent: Boolean = false
     ): TelegraphPage? {
         return try {
+            logger.debug("Editing page $path with content: ${content.toJsonArray().toString()}")
             val response = httpClient.post("https://api.telegra.ph/editPage/$path") {
                 setBody(FormDataContent(Parameters.build {
                     append("access_token", accessToken)
@@ -313,6 +318,33 @@ class TelegraphClient(private val accessToken: String? = null) {
     fun close() {
         httpClient.close()
     }
+}
+
+/**
+ * Вспомогательная функция для повторных попыток
+ */
+private suspend fun <T> retryWithBackoff(
+    maxRetries: Int = 3,
+    initialDelay: Long = 500,
+    maxDelay: Long = 2000,
+    operation: suspend () -> T
+): T? {
+    val logger = LoggerFactory.getLogger("TelegraphClientRetry")
+    var currentDelay = initialDelay
+    repeat(maxRetries) { attempt ->
+        try {
+            val result = operation()
+            return result
+        } catch (e: Exception) {
+            if (attempt == maxRetries - 1) {
+                throw e
+            }
+            logger.warn("Attempt ${attempt + 1} failed: ${e.message}. Retrying in ${currentDelay}ms...")
+            delay(currentDelay)
+            currentDelay = minOf(currentDelay * 2, maxDelay)
+        }
+    }
+    return null
 }
 
 /**

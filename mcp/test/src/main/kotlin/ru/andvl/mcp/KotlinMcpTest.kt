@@ -1,5 +1,6 @@
 package ru.andvl.mcp
 
+import io.github.cdimascio.dotenv.dotenv
 import io.modelcontextprotocol.kotlin.sdk.Implementation
 import io.modelcontextprotocol.kotlin.sdk.TextContent
 import io.modelcontextprotocol.kotlin.sdk.client.Client
@@ -23,13 +24,22 @@ import java.io.File
 fun main() = runBlocking {
     println("🧪 Тестирование MCP серверов (GitHub и Telegraph)...")
 
+    // Загружаем переменные окружения из .env
+    val dotenv = dotenv { ignoreIfMissing = true }
+
+    // Добавляем TELEGRAPH_ACCESS_TOKEN в переменные окружения
+    val env = System.getenv().toMutableMap()
+    dotenv["TELEGRAPH_ACCESS_TOKEN"]?.let { token ->
+        env["TELEGRAPH_ACCESS_TOKEN"] = token
+    }
+
     // Тестируем GitHub MCP сервер
     testGitHubMcpServer()
 
     println("\n" + "=".repeat(50))
 
     // Тестируем Telegraph MCP сервер
-    testTelegraphMcpServer()
+    testTelegraphMcpServer(env)
 }
 
 /**
@@ -153,7 +163,7 @@ suspend fun testGitHubMcpServer() {
 /**
  * Тестирование Telegraph MCP сервера
  */
-suspend fun testTelegraphMcpServer() {
+suspend fun testTelegraphMcpServer(env: Map<String, String>) {
     println("\n🧪 Тестирование Telegraph MCP сервера...")
 
     val jarPath = "mcp/telegraph/build/libs/telegraph-0.1.0.jar"
@@ -171,6 +181,8 @@ suspend fun testTelegraphMcpServer() {
     val process = ProcessBuilder("java", "-jar", jarFile.absolutePath)
         .redirectErrorStream(false)
         .start()
+
+//    env.forEach { (k, v) -> pb.environment()[k] = v }
 
     delay(2000)
 
@@ -223,39 +235,59 @@ suspend fun testTelegraphMcpServer() {
         var createdPagePath: String? = null
         if (toolsList.contains("create-telegraph-page")) {
             println("\n🔧 Вызов инструмента create-telegraph-page...")
-            val content = listOf(
-                mapOf(
-                    "tag" to "h3",
-                    "children" to listOf("Hello Telegraph!")
-                ),
-                mapOf(
-                    "tag" to "p",
-                    "children" to listOf("This is a test page created via MCP.")
-                ),
-                mapOf(
-                    "tag" to "p",
-                    "children" to listOf("Bold text", " and ", "italic text."),
-                    "attrs" to mapOf("style" to "color: blue;")
-                )
-            )
+            val contentMarkdown = """# Hello Telegraph!
+                
+This is a test page created via MCP.
+
+This paragraph has **bold** and *italic* text.
+
+Here's a link to [Telegraph](https://telegra.ph).
+
+## Features List
+
+* First feature
+* Second feature with **bold text**
+* Third feature
+
+> This is a quote from someone important.
+
+You can also write `code` inline.
+
+```
+println("Hello, World!");
+```
+
+---
+
+### Conclusion
+
+This demonstrates Markdown support in the Telegraph MCP server."""
 
             val result = client.callTool("create-telegraph-page", mapOf(
                 "title" to "Test Page via MCP",
                 "author_name" to "MCP Test",
-                "content" to content,
+                "content" to contentMarkdown,
                 "return_content" to true
             ))?.content?.map { if (it is TextContent) it.text else it.toString() }
 
             println("📋 Результат создания страницы: ${result?.joinToString()}")
 
-            // Извлекаем path из результата для последующего использования
+            // Извлекаем path и contentMarkdown из результата
             result?.firstOrNull()?.let { jsonStr ->
                 // Простое извлечение path из JSON строки
                 val pathRegex = """"path":"([^"]+)"""".toRegex()
-                val match = pathRegex.find(jsonStr)
-                createdPagePath = match?.groupValues?.get(1)
+                val pathMatch = pathRegex.find(jsonStr)
+                createdPagePath = pathMatch?.groupValues?.get(1)
                 if (createdPagePath != null) {
                     println("✅ Сохранен путь созданной страницы: $createdPagePath")
+                }
+
+                // Показываем Markdown если вернулся
+                val contentMdRegex = """"contentMarkdown":"([^"]+)"""".toRegex()
+                val contentMatch = contentMdRegex.find(jsonStr)
+                if (contentMatch != null) {
+                    println("\n📝 Контент в формате Markdown:")
+                    println(contentMatch.groupValues[1].replace("\\n", "\n"))
                 }
             }
         }
@@ -276,45 +308,50 @@ suspend fun testTelegraphMcpServer() {
         // Тест edit-telegraph-page
         if (createdPagePath != null && toolsList.contains("edit-telegraph-page")) {
             println("\n🔧 Вызов инструмента edit-telegraph-page...")
-            val editedContent = listOf(
-                mapOf(
-                    "tag" to "h3",
-                    "children" to listOf("Hello Telegraph! (Edited)")
-                ),
-                mapOf(
-                    "tag" to "p",
-                    "children" to listOf("This page has been edited via MCP.")
-                ),
-                mapOf(
-                    "tag" to "ul",
-                    "children" to listOf(
-                        "First item",
-                        "Second item",
-                        "Third item with bold and italic text"
-                    )
-                ),
-                mapOf(
-                    "tag" to "ul",
-                    "children" to listOf(
-                        "Second item",
-                    )
-                ),
-                mapOf(
-                    "tag" to "p",
-                    "children" to listOf("Edited at 2025-10-29"),
-                    "attrs" to mapOf("style" to "color: green;")
-                )
-            )
+            val editedContentMarkdown = """# Hello Telegraph! (Edited)
+                
+This page has been **edited** via MCP.
+
+## Updated Features
+
+1. First updated feature
+2. Second updated feature
+3. Third updated feature
+
+### New Section
+
+This is a completely new section that was added during editing.
+
+> "This quote was added during editing"
+
+The original content has been **modified** and *enhanced*.
+
+```
+// Updated code block
+console.log("Edited content!");
+```
+
+**Edit timestamp:** 2025-10-29"""
 
             val result = client.callTool("edit-telegraph-page", mapOf(
                 "path" to createdPagePath,
                 "title" to "Test Page via MCP (Edited)",
                 "author_name" to "MCP Test Editor",
-                "content" to editedContent,
+                "content" to editedContentMarkdown,
                 "return_content" to true
             ))?.content?.map { if (it is TextContent) it.text else it.toString() }
 
             println("📋 Результат редактирования страницы: ${result?.joinToString()}")
+
+            // Показываем отредактированный Markdown если вернулся
+            result?.firstOrNull()?.let { jsonStr ->
+                val contentMdRegex = """"contentMarkdown":"([^"]+)"""".toRegex()
+                val contentMatch = contentMdRegex.find(jsonStr)
+                if (contentMatch != null) {
+                    println("\n📝 Отредактированный контент в формате Markdown:")
+                    println(contentMatch.groupValues[1].replace("\\n", "\n"))
+                }
+            }
         } else if (createdPagePath == null) {
             println("\n⚠️ Не удалось получить путь созданной страницы, пропускаем тест edit-telegraph-page")
         }

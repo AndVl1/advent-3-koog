@@ -10,6 +10,15 @@ plugins {
     alias(libs.plugins.shadow.jar)
 }
 
+// Configure testing
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
 // Configure shadow JAR
 tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
     archiveBaseName.set("telegraph")
@@ -43,4 +52,9 @@ dependencies {
     implementation(libs.mcp.kotlin)
 
     implementation(libs.logback.classic)
+
+    // Testing dependencies
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.dotenv)
 }

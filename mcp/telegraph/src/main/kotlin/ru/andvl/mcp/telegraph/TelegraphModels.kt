@@ -1,5 +1,6 @@
 package ru.andvl.mcp.telegraph
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -7,12 +8,12 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class TelegraphAccount(
-    val shortName: String,
-    val authorName: String? = null,
-    val authorUrl: String? = null,
-    val authUrl: String? = null,
-    val pageCount: Int? = null,
-    val accessToken: String? = null
+    @SerialName("short_name") val shortName: String,
+    @SerialName("author_name") val authorName: String? = null,
+    @SerialName("author_url") val authorUrl: String? = null,
+    @SerialName("auth_url") val authUrl: String? = null,
+    @SerialName("page_count") val pageCount: Int? = null,
+    @SerialName("access_token") val accessToken: String? = null
 )
 
 /**
@@ -30,16 +31,16 @@ data class TelegraphNode(
  */
 @Serializable
 data class TelegraphPage(
-    val path: String,
-    val url: String,
-    val title: String,
-    val description: String? = null,
-    val authorName: String? = null,
-    val authorUrl: String? = null,
-    val imageUrl: String? = null,
-    val content: List<TelegraphNode>? = null,
-    val views: Int? = null,
-    val canEdit: Boolean? = null
+    @SerialName("path") val path: String,
+    @SerialName("url") val url: String,
+    @SerialName("title") val title: String,
+    @SerialName("description") val description: String? = null,
+    @SerialName("author_name") val authorName: String? = null,
+    @SerialName("author_url") val authorUrl: String? = null,
+    @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("content") val content: List<TelegraphNode>? = null,
+    @SerialName("views") val views: Int? = null,
+    @SerialName("can_edit") val canEdit: Boolean? = null
 )
 
 /**
@@ -47,8 +48,8 @@ data class TelegraphPage(
  */
 @Serializable
 data class TelegraphPageList(
-    val totalPages: Int,
-    val pages: List<TelegraphPage>
+    @SerialName("total_pages") val totalPages: Int? = null,
+    @SerialName("pages") val pages: List<TelegraphPage> = emptyList()
 )
 
 /**

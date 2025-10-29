@@ -2,125 +2,82 @@ package ru.andvl.mcp.telegraph
 
 /**
  * Telegraph MCP Server
- * 
+ *
  * This server provides MCP tools for interacting with the Telegraph API.
- * 
- * ## Content Node Structure
- * 
- * For `create-telegraph-page` and `edit-telegraph-page` tools, the content parameter
- * should be an array of nodes. Each node is a JSON object with the following structure:
- * 
- * ```json
- * {
- *   "tag": "string",           // Required: HTML tag name (e.g., "p", "h3", "ul", "li")
- *   "children": ["string"],   // Optional: Array of text content
- *   "attrs": {                 // Optional: HTML attributes
- *     "style": "string",
- *     "href": "string",
- *     "src": "string"
- *   }
- * }
- * ```
- * 
- * ### Supported Tags:
- * - **Text formatting**: `p`, `h1`, `h2`, `h3`, `h4`, `strong`, `em`, `u`, `s`, `code`, `pre`
- * - **Lists**: `ul`, `ol`, `li`
- * - **Links**: `a` (with `href` in attrs)
- * - **Images**: `img` (with `src` in attrs)
- * - **Other**: `blockquote`, `hr`, `br`
- * 
+ *
+ * ## Markdown Support
+ *
+ * All content parameters accept **Markdown strings** which are automatically converted
+ * to Telegraph's internal format. When retrieving pages, the content is returned
+ * as Markdown strings for easy consumption.
+ *
+ * ### Supported Markdown Features:
+ * - **Headers**: `# H1`, `## H2`, `### H3`, `#### H4`
+ * - **Text formatting**: `**bold**`, `*italic*`, `~~strikethrough~~`, `` `code` ``
+ * - **Links**: `[Link text](https://example.com)`
+ * - **Images**: `![Alt text](https://example.com/image.jpg)`
+ * - **Lists**:
+ *   - Unordered: `* Item 1`, `- Item 2`, `+ Item 3`
+ *   - Ordered: `1. Item 1`, `2. Item 2`
+ * - **Blockquotes**: `> This is a quote`
+ * - **Code blocks**: ```\ncode here\n```
+ * - **Horizontal rules**: `---` or `***`
+ * - **Paragraphs**: Separate lines with empty lines
+ *
  * ### Examples:
- * 
- * **Simple paragraph:**
- * ```json
- * [
- *   {
- *     "tag": "p",
- *     "children": ["Hello, world!"]
- *   }
- * ]
+ *
+ * **Simple content:**
+ * ```markdown
+ * # Welcome to Telegraph
+ *
+ * This is a **simple** paragraph with *italic* text.
  * ```
- * 
- * **Heading with style:**
- * ```json
- * [
- *   {
- *     "tag": "h3",
- *     "children": ["Welcome to Telegraph"],
- *     "attrs": {
- *       "style": "color: blue;"
- *     }
- *   }
- * ]
+ *
+ * **Article with formatting:**
+ * ```markdown
+ * # My Article
+ *
+ * ## Introduction
+ *
+ * This is an introduction paragraph with a [link to Telegraph](https://telegra.ph).
+ *
+ * ## Features
+ *
+ * - First feature
+ * - Second feature with **bold text**
+ * - Third feature
+ *
+ * > This is a quote from someone important.
+ *
+ * ```code
+ * println("Hello, World!")
  * ```
- * 
- * **List:**
- * ```json
- * [
- *   {
- *     "tag": "ul",
- *     "children": [
- *       "First item",
- *       "Second item",
- *       "Third item"
- *     ]
- *   }
- * ]
+ *
+ * Check out the image below:
+ *
+ * ![Example Image](https://example.com/image.jpg)
  * ```
- * 
- * **Link:**
- * ```json
- * [
- *   {
- *     "tag": "p",
- *     "children": ["Visit "],
- *   },
- *   {
- *     "tag": "a",
- *     "children": ["Telegraph"],
- *     "attrs": {
- *       "href": "https://telegra.ph"
- *     }
- *   },
- *   {
- *     "tag": "p",
- *     "children": [" for more info."]
- *   }
- * ]
- * ```
- * 
+ *
  * **Mixed formatting:**
- * ```json
- * [
- *   {
- *     "tag": "h3",
- *     "children": ["Article Title"]
- *   },
- *   {
- *     "tag": "p",
- *     "children": ["This is "],
- *   },
- *   {
- *     "tag": "strong",
- *     "children": ["bold"]
- *   },
- *   {
- *     "tag": "p",
- *     "children": [" and "],
- *   },
- *   {
- *     "tag": "em",
- *     "children": ["italic"]
- *   },
- *   {
- *     "tag": "p",
- *     "children": [" text."]
- *   },
- *   {
- *     "tag": "blockquote",
- *     "children": ["This is a quote."]
- *   }
- * ]
+ * ```markdown
+ * # Title
+ *
+ * This paragraph has **bold**, *italic*, and `code` formatting.
+ *
+ * You can also create [links](https://example.com) and images:
+ * ![Alt text](https://example.com/image.png)
+ *
+ * > "Quote of the day"
+ *
+ * ---
+ *
+ * ## Lists
+ *
+ * 1. First item
+ * 2. Second item
+ *    - Nested item
+ *    - Another nested item
+ * 3. Third item
  * ```
  */
 
@@ -144,7 +101,9 @@ object TelegraphMcpServer {
     fun runServer() {
         logger.info("🚀 Starting Kotlin Telegraph MCP Server...")
 
-        val dotenv = dotenv { ignoreIfMissing = true }
+        val dotenv = dotenv {
+          ignoreIfMissing = true
+        }
         val telegraphToken: String? = dotenv["TELEGRAPH_ACCESS_TOKEN"]
         val telegraphClient = TelegraphClient(telegraphToken)
         val json = Json { prettyPrint = false }
@@ -179,6 +138,10 @@ object TelegraphMcpServer {
                         put("type", JsonPrimitive("string"))
                         put("description", JsonPrimitive("Default profile link (0-512 characters, optional)"))
                     }
+                    putJsonObject("access_token") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Access token (optional if set in .env)"))
+                    }
                 },
                 required = listOf("short_name")
             )
@@ -188,9 +151,10 @@ object TelegraphMcpServer {
                     content = listOf(TextContent("Short name is required")),
                     isError = true
                 )
-            
+
             val authorName = request.arguments["author_name"]?.jsonPrimitive?.content
             val authorUrl = request.arguments["author_url"]?.jsonPrimitive?.content
+            val accessToken = request.arguments["access_token"]?.jsonPrimitive?.content
 
             val account = telegraphClient.createAccount(shortName, authorName, authorUrl)
                 ?: return@addTool CallToolResult(
@@ -199,7 +163,7 @@ object TelegraphMcpServer {
                 )
 
             val response = json.encodeToString(TelegraphAccount.serializer(), account)
-            
+
             CallToolResult(
                 content = listOf(TextContent(response))
             )
@@ -211,10 +175,10 @@ object TelegraphMcpServer {
             description = "Get information about a Telegraph account",
             inputSchema = Tool.Input(
                 properties = buildJsonObject {
-                    putJsonObject("access_token") {
-                        put("type", JsonPrimitive("string"))
-                        put("description", JsonPrimitive("Access token (optional if set in .env)"))
-                    }
+//                    putJsonObject("access_token") {
+//                        put("type", JsonPrimitive("string"))
+//                        put("description", JsonPrimitive("Access token (optional if set in .env)"))
+//                    }
                     putJsonObject("fields") {
                         put("type", JsonPrimitive("array"))
                         put("description", JsonPrimitive("Fields to return (optional)"))
@@ -225,7 +189,7 @@ object TelegraphMcpServer {
         ) { request ->
             val accessToken = request.arguments["access_token"]?.jsonPrimitive?.content
             val fieldsJson = request.arguments["fields"]?.jsonArray
-            val fields = fieldsJson?.map { it.jsonPrimitive.content } 
+            val fields = fieldsJson?.map { it.jsonPrimitive.content }
                 ?: listOf("short_name", "author_name", "author_url", "page_count")
 
             val token = accessToken ?: telegraphToken
@@ -235,7 +199,7 @@ object TelegraphMcpServer {
                     isError = true
                 )
             }
-            
+
             val account = telegraphClient.getAccountInfo(
                 accessToken = token,
                 fields = fields
@@ -245,7 +209,7 @@ object TelegraphMcpServer {
             )
 
             val response = json.encodeToString(TelegraphAccount.serializer(), account)
-            
+
             CallToolResult(
                 content = listOf(TextContent(response))
             )
@@ -270,8 +234,8 @@ object TelegraphMcpServer {
                         put("description", JsonPrimitive("Author URL (0-512 characters, optional)"))
                     }
                     putJsonObject("content") {
-                        put("type", JsonPrimitive("array"))
-                        put("description", JsonPrimitive("Page content as array of nodes. Each node has 'tag' (required), 'children' (optional array of strings), and 'attrs' (optional object). Example: [{\"tag\":\"p\",\"children\":[\"Hello world\"]}]"))
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Page content in Markdown format. Supports headers, bold, italic, links, lists, blockquotes, code blocks, etc. Example: '# Title\\n\\nThis is **bold** text with a [link](https://example.com).'"))
                     }
                     putJsonObject("return_content") {
                         put("type", JsonPrimitive("boolean"))
@@ -286,35 +250,24 @@ object TelegraphMcpServer {
                     content = listOf(TextContent("Title is required")),
                     isError = true
                 )
-            
+
             val authorName = request.arguments["author_name"]?.jsonPrimitive?.content
             val authorUrl = request.arguments["author_url"]?.jsonPrimitive?.content
             val returnContent = request.arguments["return_content"]?.jsonPrimitive?.booleanOrNull ?: false
 
-            val contentJson = request.arguments["content"]?.jsonArray
+            val contentMarkdown = request.arguments["content"]?.jsonPrimitive?.content
                 ?: return@addTool CallToolResult(
                     content = listOf(TextContent("Content is required")),
                     isError = true
                 )
 
-            val content = contentJson.mapNotNull { node ->
-                val nodeObj = node.jsonObject
-                val tag = nodeObj["tag"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                val children = nodeObj["children"]?.jsonArray?.map { it.jsonPrimitive.content }
-                val attrs = nodeObj["attrs"]?.jsonObject?.mapValues { 
-                    it.value.jsonPrimitive.content 
-                }
-                TelegraphNode(tag, children, attrs)
-            }
+            val content = MarkdownConverter.markdownToNodes(contentMarkdown)
 
-            val token = telegraphToken
-            if (token == null) {
-                return@addTool CallToolResult(
-                    content = listOf(TextContent("Access token is required in .env file")),
-                    isError = true
-                )
-            }
-            
+            val token = telegraphToken ?: return@addTool CallToolResult(
+                content = listOf(TextContent("Access token is required in .env file")),
+                isError = true
+            )
+
             val page = telegraphClient.createPage(
                 accessToken = token,
                 title = title,
@@ -323,14 +276,37 @@ object TelegraphMcpServer {
                 content = content,
                 returnContent = returnContent
             ) ?: return@addTool CallToolResult(
-                content = listOf(TextContent("Failed to create page. Check access token.")),
+                content = listOf(
+                    TextContent("Failed to create page. Check access token."),
+                    TextContent("Token: $token")
+                ),
                 isError = true
             )
 
-            val response = json.encodeToString(TelegraphPage.serializer(), page)
-            
+            val contentMarkdownOut = if (returnContent && page.content != null) {
+                MarkdownConverter.nodesToMarkdown(page.content!!)
+            } else null
+
+            val responsePage = TelegraphPageResponse(
+                path = page.path,
+                url = page.url,
+                title = page.title,
+                description = page.description,
+                authorName = page.authorName,
+                authorUrl = page.authorUrl,
+                imageUrl = page.imageUrl,
+                contentMarkdown = contentMarkdownOut,
+                views = page.views,
+                canEdit = page.canEdit
+            )
+
+            val response = json.encodeToString(TelegraphPageResponse.serializer(), responsePage)
+
             CallToolResult(
-                content = listOf(TextContent(response))
+                content = listOf(
+                    TextContent(response),
+                    TextContent("TOKEN: $token")
+                )
             )
         }
 
@@ -357,8 +333,8 @@ object TelegraphMcpServer {
                         put("description", JsonPrimitive("Author URL (0-512 characters, optional)"))
                     }
                     putJsonObject("content") {
-                        put("type", JsonPrimitive("array"))
-                        put("description", JsonPrimitive("Page content as array of nodes. Each node has 'tag' (required), 'children' (optional array of strings), and 'attrs' (optional object). Example: [{\"tag\":\"p\",\"children\":[\"Hello world\"]}]"))
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Page content in Markdown format. Supports headers, bold, italic, links, lists, blockquotes, code blocks, etc. Example: '# Title\\n\\nThis is **bold** text with a [link](https://example.com).'"))
                     }
                     putJsonObject("return_content") {
                         put("type", JsonPrimitive("boolean"))
@@ -373,32 +349,24 @@ object TelegraphMcpServer {
                     content = listOf(TextContent("Path is required")),
                     isError = true
                 )
-            
+
             val title = request.arguments["title"]?.jsonPrimitive?.content
                 ?: return@addTool CallToolResult(
                     content = listOf(TextContent("Title is required")),
                     isError = true
                 )
-            
+
             val authorName = request.arguments["author_name"]?.jsonPrimitive?.content
             val authorUrl = request.arguments["author_url"]?.jsonPrimitive?.content
             val returnContent = request.arguments["return_content"]?.jsonPrimitive?.booleanOrNull ?: false
 
-            val contentJson = request.arguments["content"]?.jsonArray
+            val contentMarkdown = request.arguments["content"]?.jsonPrimitive?.content
                 ?: return@addTool CallToolResult(
                     content = listOf(TextContent("Content is required")),
                     isError = true
                 )
 
-            val content = contentJson.mapNotNull { node ->
-                val nodeObj = node.jsonObject
-                val tag = nodeObj["tag"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                val children = nodeObj["children"]?.jsonArray?.map { it.jsonPrimitive.content }
-                val attrs = nodeObj["attrs"]?.jsonObject?.mapValues { 
-                    it.value.jsonPrimitive.content 
-                }
-                TelegraphNode(tag, children, attrs)
-            }
+            val content = MarkdownConverter.markdownToNodes(contentMarkdown)
 
             val token = telegraphToken
             if (token == null) {
@@ -407,7 +375,7 @@ object TelegraphMcpServer {
                     isError = true
                 )
             }
-            
+
             val page = telegraphClient.editPage(
                 accessToken = token,
                 path = path,
@@ -421,8 +389,25 @@ object TelegraphMcpServer {
                 isError = true
             )
 
-            val response = json.encodeToString(TelegraphPage.serializer(), page)
-            
+            val contentMarkdownOut = if (returnContent && page.content != null) {
+                MarkdownConverter.nodesToMarkdown(page.content!!)
+            } else null
+
+            val responsePage = TelegraphPageResponse(
+                path = page.path,
+                url = page.url,
+                title = page.title,
+                description = page.description,
+                authorName = page.authorName,
+                authorUrl = page.authorUrl,
+                imageUrl = page.imageUrl,
+                contentMarkdown = contentMarkdownOut,
+                views = page.views,
+                canEdit = page.canEdit
+            )
+
+            val response = json.encodeToString(TelegraphPageResponse.serializer(), responsePage)
+
             CallToolResult(
                 content = listOf(TextContent(response))
             )
@@ -451,7 +436,7 @@ object TelegraphMcpServer {
                     content = listOf(TextContent("Path is required")),
                     isError = true
                 )
-            
+
             val returnContent = request.arguments["return_content"]?.jsonPrimitive?.booleanOrNull ?: false
 
             val page = telegraphClient.getPage(path, returnContent)
@@ -460,8 +445,25 @@ object TelegraphMcpServer {
                     isError = true
                 )
 
-            val response = json.encodeToString(TelegraphPage.serializer(), page)
-            
+            val contentMarkdownOut = if (returnContent && page.content != null) {
+                MarkdownConverter.nodesToMarkdown(page.content)
+            } else null
+
+            val responsePage = TelegraphPageResponse(
+                path = page.path,
+                url = page.url,
+                title = page.title,
+                description = page.description,
+                authorName = page.authorName,
+                authorUrl = page.authorUrl,
+                imageUrl = page.imageUrl,
+                contentMarkdown = contentMarkdownOut,
+                views = page.views,
+                canEdit = page.canEdit
+            )
+
+            val response = json.encodeToString(TelegraphPageResponse.serializer(), responsePage)
+
             CallToolResult(
                 content = listOf(TextContent(response))
             )
@@ -500,7 +502,7 @@ object TelegraphMcpServer {
                     isError = true
                 )
             }
-            
+
             val pageList = telegraphClient.getPageList(
                 accessToken = token,
                 offset = offset,
@@ -511,7 +513,7 @@ object TelegraphMcpServer {
             )
 
             val response = json.encodeToString(TelegraphPageList.serializer(), pageList)
-            
+
             CallToolResult(
                 content = listOf(TextContent(response))
             )
@@ -552,7 +554,7 @@ object TelegraphMcpServer {
                     content = listOf(TextContent("Path is required")),
                     isError = true
                 )
-            
+
             val year = request.arguments["year"]?.jsonPrimitive?.intOrNull
             val month = request.arguments["month"]?.jsonPrimitive?.intOrNull
             val day = request.arguments["day"]?.jsonPrimitive?.intOrNull
@@ -565,7 +567,7 @@ object TelegraphMcpServer {
                 )
 
             val response = json.encodeToString(TelegraphPageViews.serializer(), views)
-            
+
             CallToolResult(
                 content = listOf(TextContent(response))
             )
