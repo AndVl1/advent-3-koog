@@ -19,6 +19,7 @@ dependencies {
     implementation(libs.jline.terminal)
     implementation(libs.jline.reader)
     implementation(libs.logback.classic)
+    implementation("io.ktor:ktor-client-logging:3.3.0")
 
     testImplementation(libs.kotlin.test.junit)
 }

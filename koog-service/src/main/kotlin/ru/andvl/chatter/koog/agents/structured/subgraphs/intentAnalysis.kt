@@ -6,7 +6,7 @@ import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.structure.StructureFixingParser
 import ru.andvl.chatter.koog.agents.structured.Response
-import ru.andvl.chatter.koog.agents.utils.MAX_CONTEXT_LENGTH
+import ru.andvl.chatter.koog.agents.utils.FIXING_MAX_CONTEXT_LENGTH
 import ru.andvl.chatter.koog.agents.utils.getLatestTokenUsage
 import ru.andvl.chatter.koog.model.structured.ChatRequest
 import ru.andvl.chatter.koog.model.structured.IntentAnalysis
@@ -29,7 +29,7 @@ internal inline fun AIAgentSubgraphBuilderBase<ChatRequest, Pair<IntentAnalysis,
                         LLMCapability.Temperature,
                         LLMCapability.Completion,
                     ),
-                    contextLength = MAX_CONTEXT_LENGTH,
+                    contextLength = FIXING_MAX_CONTEXT_LENGTH,
                 )
                 prompt = prompt.copy(
                     params = prompt.params.copy(
@@ -66,7 +66,7 @@ internal inline fun AIAgentSubgraphBuilderBase<ChatRequest, Pair<IntentAnalysis,
                             LLMCapability.Temperature,
                             LLMCapability.Completion,
                         ),
-                        contextLength = MAX_CONTEXT_LENGTH,
+                        contextLength = FIXING_MAX_CONTEXT_LENGTH,
                     ),
                     retries = 3
                 )

@@ -12,14 +12,14 @@ import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
-import ru.andvl.chatter.koog.agents.utils.MAX_CONTEXT_LENGTH
+import org.slf4j.LoggerFactory
+import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
+import ru.andvl.chatter.koog.agents.utils.FIXING_MAX_CONTEXT_LENGTH
 import ru.andvl.chatter.koog.model.common.TokenUsage
-import ru.andvl.chatter.koog.model.tool.GithubChatRequest
-import ru.andvl.chatter.koog.model.tool.GithubRepositoryAnalysisModel
-import ru.andvl.chatter.koog.model.tool.InitialPromptAnalysisModel
-import ru.andvl.chatter.koog.model.tool.ToolChatResponse
+import ru.andvl.chatter.koog.model.tool.*
 
-private val toolCallsKey = createStorageKey<List<String>>("tool-calls")
+private val originalRequestKey = createStorageKey<InitialPromptAnalysisModel.SuccessAnalysisModel>("original-request")
+private val logger = LoggerFactory.getLogger("mcp")
 
 internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubAnalyze():
         AIAgentSubgraphDelegate<InitialPromptAnalysisModel.SuccessAnalysisModel, ToolChatResponse> =
@@ -41,55 +41,99 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
 
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeGithubRequest() =
     node<InitialPromptAnalysisModel.SuccessAnalysisModel, Message.Response>("process-user-request") { request ->
+        // Store original request for later use
+        storage.set(originalRequestKey, request)
+
         llm.writeSession {
-            updatePrompt {
-                system("""
-                    You are a GitHub repository analysis expert with access to GitHub API tools.
-                    
-                    Your task is to thoroughly analyze the requested GitHub repository and gather comprehensive information to answer the user's specific questions.
-                    
-                    **Available Tools:**
-                    Use the GitHub MCP tools to collect information about:
-                    - Repository metadata (name, description, stars, forks, topics, license)
-                    - README and documentation files
-                    - File structure and directory contents
-                    - Dependencies (package.json, requirements.txt, pom.xml, etc.)
-                    - Recent commits and activity
-                    - Issues and pull requests (if relevant)
-                    - Code samples from key files
- 
-                    **Analysis Strategy:**
-                    1. Start with basic repository information
-                    2. Examine the README for project overview
-                    3. Analyze the file structure to understand project organization
-                    4. Check dependencies and build configuration
-                    5. Look at recent activity and development status
-                    6. Focus on specific aspects mentioned in the user's request
+            appendPrompt {
+                val requirementsText = request.requirements?.let { req ->
+                    """
+      
+                                        **STRUCTURED REQUIREMENTS TO ANALYZE:**
+                                        
+                                        General Conditions: ${req.generalConditions}
 
-                    **Important:**
-                    - Use multiple tool calls to gather comprehensive information
-                    - Be systematic in your approach
-                    - Collect relevant code snippets when analyzing technical aspects
-                    - Pay attention to the user's specific questions and interests
-                    - Try to use no more then 10 tool calls
+                                        Important Constraints (pay special attention):
+                                        ${req.importantConstraints.joinToString("\n") { "- $it" }}
+                                        
+                                        Additional Advantages (look for positive aspects):
+                                        ${req.additionalAdvantages.joinToString("\n") { "- $it" }}
+                                        
+                                        Attention Points (requires careful review):
+                                        ${req.attentionPoints.joinToString("\n") { "- $it" }}
+                                        """.trimIndent()
+                } ?: ""
 
-                    Proceed with gathering information about the repository systematically.
-                """.trimIndent())
+                system(
+                    """
+                                        You are a GitHub repository analysis expert with access to GitHub API tools.
+                                        
+                                        Your task is to thoroughly analyze the requested GitHub repository and gather comprehensive information to answer the user's specific questions, with special focus on structured requirements provided.
+                                        
+                                        **IMPORTANT LANGUAGE REQUIREMENT:**
+                                        - Detect the language of the original user request and requirements
+                                        - Gather information systematically but prepare for final response in the SAME language as the original request
+                                        - If the user request was in Russian, the final analysis should be in Russian
+                                        - If the user request was in English, the final analysis should be in English
+                                        - Preserve technical terms and maintain professional language style
+                                        
+                                        **Available Tools:**
+                                        Use the GitHub MCP tools to collect information about:
+                                        - Repository metadata (name, description, stars, forks, topics, license)
+                                        - README and documentation files
+                                        - File structure and directory contents
+                                        - Dependencies (package.json, requirements.txt, pom.xml, etc.)
+                                        - Recent commits and activity
+                                        - Issues and pull requests (if relevant)
+                                        - Code samples from key files
+                                        
+                                        **Analysis Strategy:**
+                                        1. Start with basic repository information
+                                        2. Examine the README for project overview
+                                        3. Analyze the file structure to understand project organization
+                                        4. Check dependencies and build configuration
+                                        5. Look at recent activity and development status
+                                        6. **CRITICAL**: For each requirement category, actively look for evidence in the codebase:
+                                           - Check how general conditions are met
+                                           - Verify compliance with important constraints
+                                           - Identify additional advantages present in the code
+                                           - Gather data for attention points that need human review
+                                        7. Focus on specific aspects mentioned in the user's request
+                                        
+                                        **Important:**
+                                        - Use multiple tool calls to gather comprehensive information
+                                        - Be systematic in your approach
+                                        - Collect relevant code snippets when analyzing technical aspects
+                                        - Pay special attention to structured requirements provided below
+                                        - For each requirement point, try to find specific file references and line numbers
+                                        - Document any problems, advantages, or OK status for each requirement
+                                        - Try to use no more then 15 tool calls (increased for thorough requirements analysis)
+                                        
+                                        ${requirementsText}
+                                        
+                                        Proceed with gathering information about the repository systematically, with particular focus on addressing the structured requirements.
+                                    """.trimIndent()
+                )
 
-                user("""
-                    Please analyze the GitHub repository: ${request.githubRepo}
-                    
-                    User's specific request: ${request.userRequest}
-                    
-                    Use the available GitHub tools to collect comprehensive information and focus on answering the user's specific questions.
-                """.trimIndent())
+                user(
+                    """
+                                        Please analyze the GitHub repository: ${request.githubRepo}
+                                        
+                                        User's specific request: ${request.userRequest}
+                                        
+                                        **LANGUAGE NOTE:** The final analysis report should be written in the same language as the user's original request above.
+                                        
+                                        Use the available GitHub tools to collect comprehensive information and focus on answering the user's specific questions.
+                                    """.trimIndent()
+                )
 
                 model = model.copy(
+//                    id = "qwen/qwen3-coder", // "openai/gpt-5-nano", // "qwen/qwen3-coder"
                     capabilities = listOf(
                         LLMCapability.Temperature,
                         LLMCapability.Completion,
                         LLMCapability.Tools,
-                        LLMCapability.ToolChoice,
+//                        LLMCapability.ToolChoice,
                     )
                 )
             }
@@ -99,60 +143,161 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
     }
 
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeProcessResult() =
-    node<String, ToolChatResponse>("process-llm-result") { request ->
+    node<String, ToolChatResponse>("process-llm-result") { rawAnalysisData ->
+        val originalRequest = storage.get(originalRequestKey)
         llm.writeSession {
-            updatePrompt {
-                system("""
-                    You are an expert at synthesizing GitHub repository analysis results into clear, structured reports.
-                    
-                    Your task is to process the raw analysis data and create a comprehensive, well-organized response.
-                    
-                    **Structure your response with these sections:**
-                    
-                    # Repository Overview
-                    - Name, description, and basic metrics
-                    - Primary programming language and tech stack
-                    - License and maintenance status
-                    
-                    # Project Structure & Architecture
-                    - Directory organization
-                    - Key files and their purposes
-                    - Architecture patterns identified
-                    
-                    # Dependencies & Build System
-                    - Main dependencies and frameworks
-                    - Build tools and configuration
-                    - Development and runtime requirements
-                    
-                    # Key Features & Functionality
-                    - Main features and capabilities
-                    - Notable code patterns or implementations
-                    - API structure (if applicable)
-                    
-                    # Development Activity
-                    - Recent commits and changes
-                    - Contributor activity
-                    - Issue and PR status
-                    
-                    # Analysis Summary
-                    - Code quality indicators
-                    - Documentation quality
-                    - Recommendations or insights
-                    - Direct answers to user's specific questions
+            appendPrompt {
+                model = model.copy(
+                    id = "z-ai/glm-4.6"
+                )
 
-                    **Guidelines:**
-                    - Use clear, professional language
-                    - Include specific details and examples where relevant
-                    - Highlight interesting or notable aspects
-                    - Be concise but comprehensive
-                    - Focus on information that would be valuable to developers
-                """.trimIndent())
+                val requirementsSection = originalRequest?.requirements?.let { req ->
+                    """
+                                        
+                                        **STRUCTURED REQUIREMENTS REVIEW:**
+                                        You MUST provide a structured review based on the requirements:
+                                        
+                                        1. General Conditions Review:
+                                           - Requirement: ${req.generalConditions}
+                                           - Provide ONE RequirementReviewComment evaluating how well the repository meets this condition
+                                        
+                                        2. Important Constraints Review:
+                                           ${req.importantConstraints.mapIndexed { index, constraint -> 
+                                               "- Constraint ${index + 1}: $constraint"
+                                           }.joinToString("\n                                           ")}
+                                           - Provide RequirementReviewComment for EACH constraint
+                                        
+                                        3. Additional Advantages Review:
+                                           ${req.additionalAdvantages.mapIndexed { index, advantage -> 
+                                               "- Advantage ${index + 1}: $advantage"
+                                           }.joinToString("\n                                           ")}
+                                           - Provide RequirementReviewComment for EACH advantage
+                                        
+                                        4. Attention Points Review:
+                                           ${req.attentionPoints.mapIndexed { index, point -> 
+                                               "- Point ${index + 1}: $point"
+                                           }.joinToString("\n                                           ")}
+                                           - Provide RequirementReviewComment for EACH attention point
+                                        
+                                        For each RequirementReviewComment provide:
+                                        - comment_type: EXACTLY one of "PROBLEM", "ADVANTAGE", or "OK"
+                                        - comment: Detailed analysis of the requirement
+                                        - file_reference: ACTUAL file path and line number (e.g., "src/main.js:42") - ONLY if found in analysis
+                                        - code_quote: ACTUAL code snippet - ONLY if found in analysis
+                                        """.trimIndent()
+                } ?: ""
 
-                user("""
-                    Based on the GitHub repository analysis below, please create a structured, comprehensive report.
+                val jsonExample = if (originalRequest?.requirements != null) {
+                    """
                     
-                    Raw analysis data: $request
-                """.trimIndent())
+                    **REQUIRED JSON OUTPUT STRUCTURE:**
+                    ```json
+                    {
+                      "free_form_github_analysis": "Comprehensive analysis text with repository overview, technical details, architecture, dependencies, etc.",
+                      "tldr": "Brief summary of key findings",
+                      "repository_review": {
+                        "general_conditions_review": {
+                          "comment_type": "OK|PROBLEM|ADVANTAGE",
+                          "comment": "Detailed evaluation of general conditions",
+                          "file_reference": "path/to/file.ext:123",
+                          "code_quote": "actual code snippet"
+                        },
+                        "constraints_review": [
+                          {
+                            "comment_type": "OK|PROBLEM|ADVANTAGE",
+                            "comment": "Evaluation of first constraint",
+                            "file_reference": "path/to/file.ext:456",
+                            "code_quote": "relevant code"
+                          }
+                        ],
+                        "advantages_review": [
+                          {
+                            "comment_type": "OK|PROBLEM|ADVANTAGE",
+                            "comment": "Evaluation of first advantage",
+                            "file_reference": "path/to/file.ext:789",
+                            "code_quote": "supporting code"
+                          }
+                        ],
+                        "attention_points_review": [
+                          {
+                            "comment_type": "OK|PROBLEM|ADVANTAGE",
+                            "comment": "Analysis of attention point",
+                            "file_reference": "path/to/file.ext:012",
+                            "code_quote": "related code"
+                          }
+                        ]
+                      }
+                    }
+                    ```
+                    """
+                } else {
+                    """
+                    
+                    **REQUIRED JSON OUTPUT STRUCTURE:**
+                    ```json
+                    {
+                      "free_form_github_analysis": "Comprehensive analysis text with repository overview, technical details, etc.",
+                      "tldr": "Brief summary of key findings",
+                      "repository_review": null
+                    }
+                    ```
+                    """
+                }
+
+                system(
+                    """
+                                        You are an expert at synthesizing GitHub repository analysis results into structured JSON reports.
+                                        
+                                        Your task: Process the raw analysis data and create a comprehensive response following the EXACT JSON structure provided.
+                                        
+                                        **CRITICAL LANGUAGE REQUIREMENT:**
+                                        - The entire response (free_form_github_analysis, tldr, and all comments) MUST be written in the SAME language as the original user request
+                                        - If the original user request was in Russian, write the analysis in Russian
+                                        - If the original user request was in English, write the analysis in English
+                                        - Preserve technical terms but adapt the language style to match the original request
+                                        - Maintain professional and technical tone in the target language
+                                        
+                                        **CRITICAL REQUIREMENTS:**
+                                        1. Output MUST be valid JSON matching the provided structure
+                                        2. Field names MUST match exactly: "free_form_github_analysis", "tldr", "repository_review"
+                                        3. Use ONLY actual file references found in the analysis data - DO NOT invent file paths
+                                        4. Comment types MUST be exactly: "PROBLEM", "ADVANTAGE", or "OK"
+                                        5. If no requirements provided, set repository_review to null
+                                        6. STRICTLY DO NOT USE MARKDOWN TAGS LIKE ```json TO WRAP CONTENT
+                                        
+                                        ${requirementsSection}
+                                        ${jsonExample}
+
+                                        **Content Guidelines:**
+                                        - free_form_github_analysis: Comprehensive, structured analysis (include overview, architecture, dependencies, code quality, etc.)
+                                        - tldr: Concise 1-2 sentence summary of key findings
+                                        - repository_review: ONLY if requirements were provided, evaluate each requirement systematically
+                                        - Use professional, technical language in the same language as original request
+                                        - Include specific details and examples where relevant
+                                        - Base all file references on actual repository analysis - DO NOT fabricate
+                                    """.trimIndent()
+                )
+
+                user(
+                    """
+                                        Based on the GitHub repository analysis below, create a structured JSON report following the exact structure provided above.
+                                        
+                                        **IMPORTANT:** Remember to write the entire response in the SAME language as the original user request. Detect the language from the original request and maintain it throughout the analysis.
+                                        
+                                        **Original User Request:** ${originalRequest?.userRequest}
+                                        
+                                        **Analysis Data:**
+                                        $rawAnalysisData
+                                        
+                                        **Instructions:**
+                                        1. Extract comprehensive repository information for free_form_github_analysis
+                                        2. Create concise summary for tldr
+                                        3. If requirements were provided, evaluate each requirement systematically in repository_review
+                                        4. Use ONLY file references and code snippets that were actually found in the analysis
+                                        5. Output valid JSON matching the structure exactly
+                                        6. Write ALL content in the same language as the original user request
+                                    """.trimIndent()
+                )
             }
             val totalToolCalls = storage.get(toolCallsKey).orEmpty()
 
@@ -160,7 +305,41 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                 examples = listOf(
                     GithubRepositoryAnalysisModel.SuccessAnalysisModel(
                         freeFormAnswer = "The repository userName/repoName is about something",
-                        shortSummary = "Short info"
+                        shortSummary = "Short info",
+                        repositoryReview = if (originalRequest?.requirements != null) {
+                            RepositoryReviewModel(
+                                generalConditionsReview = RequirementReviewComment(
+                                    commentType = "OK",
+                                    comment = "General conditions are met",
+                                    fileReference = "src/main.js:15",
+                                    codeQuote = "function main() { ... }"
+                                ),
+                                constraintsReview = listOf(
+                                    RequirementReviewComment(
+                                        commentType = "PROBLEM",
+                                        comment = "Security constraint violated",
+                                        fileReference = "config/auth.js:23",
+                                        codeQuote = "const secret = 'hardcoded-secret'"
+                                    )
+                                ),
+                                advantagesReview = listOf(
+                                    RequirementReviewComment(
+                                        commentType = "ADVANTAGE",
+                                        comment = "Excellent error handling",
+                                        fileReference = "src/error-handler.js:10",
+                                        codeQuote = "try { ... } catch (err) { logger.error(err); }"
+                                    )
+                                ),
+                                attentionPointsReview = listOf(
+                                    RequirementReviewComment(
+                                        commentType = "OK",
+                                        comment = "Performance metrics implemented",
+                                        fileReference = "src/metrics.js:5",
+                                        codeQuote = "const performanceTimer = new Timer();"
+                                    )
+                                )
+                            )
+                        } else null
                     ),
                     GithubRepositoryAnalysisModel.FailedAnalysisModel("Request was failed because of ...")
                 ),
@@ -172,13 +351,15 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                             LLMCapability.Temperature,
                             LLMCapability.Completion,
                         ),
-                        contextLength = MAX_CONTEXT_LENGTH,
+                        contextLength = FIXING_MAX_CONTEXT_LENGTH,
                     ),
                     retries = 3
                 )
             )
             if (response.isSuccess) {
-                val resp = response.getOrThrow()
+                val resp = response.getOrThrow().also {
+                    logger.info("Final response: $it")
+                }
                 ToolChatResponse(
                     response = when (val structure = resp.structure) {
                         is GithubRepositoryAnalysisModel.FailedAnalysisModel -> structure.reason
@@ -194,8 +375,12 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                         promptTokens = resp.message.metaInfo.inputTokensCount ?: 0,
                         completionTokens = resp.message.metaInfo.outputTokensCount ?: 0,
                         totalTokens = resp.message.metaInfo.totalTokensCount ?: 0
-                    )
-
+                    ),
+                    repositoryReview = when (val structure = resp.structure) {
+                        is GithubRepositoryAnalysisModel.FailedAnalysisModel -> null
+                        is GithubRepositoryAnalysisModel.SuccessAnalysisModel -> structure.repositoryReview
+                    },
+                    requirements = originalRequest?.requirements
                 )
             } else {
                 ToolChatResponse(
@@ -203,7 +388,9 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                     shortSummary = "Request failed",
                     toolCalls = totalToolCalls,
                     originalMessage = null,
-                    tokenUsage = TokenUsage(0, 0, 0)
+                    tokenUsage = TokenUsage(0, 0, 0),
+                    repositoryReview = null,
+                    requirements = originalRequest?.requirements
                 )
             }
         }

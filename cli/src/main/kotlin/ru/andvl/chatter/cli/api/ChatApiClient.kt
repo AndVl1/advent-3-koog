@@ -5,6 +5,7 @@ import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.logging.*
 import io.ktor.client.plugins.sse.*
 import io.ktor.client.request.*
 import io.ktor.http.*
@@ -22,6 +23,10 @@ class ChatApiClient {
 
         install(HttpTimeout) {
             requestTimeoutMillis = 60_000
+        }
+
+        install(Logging) {
+            level = LogLevel.BODY
         }
 
         install(SSE)
@@ -164,12 +169,12 @@ class ChatApiClient {
                 contentType(ContentType.Application.Json)
                 setBody(requestBody)
                 timeout {
-                    requestTimeoutMillis = 300_000 // 5 minutes timeout
+                    requestTimeoutMillis = 600_000 // 10 minutes timeout
                 }
             }
 
             if (response.status == HttpStatusCode.OK) {
-                val githubResponse = response.body<GithubAnalysisResponse>()
+                val githubResponse = response.body<GithubAnalysisResponse>() //
 
                 ColorPrinter.printSuccess("✅ GitHub analysis completed successfully!")
 

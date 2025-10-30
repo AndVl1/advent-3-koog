@@ -44,3 +44,4 @@ config.properties
 /server/gradle.properties
 /tools/docs/
 /data/
+/logs/

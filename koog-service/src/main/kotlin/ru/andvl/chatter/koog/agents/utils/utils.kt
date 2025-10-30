@@ -6,10 +6,10 @@ import ai.koog.agents.core.dsl.builder.AIAgentSubgraphBuilderBase
 
 internal suspend fun AIAgentContext.getLatestTokenUsage(): Int = llm.readSession { prompt.latestTokenUsage }
 
-internal suspend fun AIAgentContext.isHistoryTooLong(): Boolean = llm.readSession { getLatestTokenUsage() > MAX_CONTEXT_LENGTH * 0.8 }
-    .also { println("TOKEN USAGE: ${getLatestTokenUsage()}, MAX CONTEXT: ${MAX_CONTEXT_LENGTH * 0.8}") }
+internal suspend fun AIAgentContext.isHistoryTooLong(): Boolean = llm.readSession { getLatestTokenUsage() > FIXING_MAX_CONTEXT_LENGTH * 0.8 }
+    .also { println("TOKEN USAGE: ${getLatestTokenUsage()}, MAX CONTEXT: ${FIXING_MAX_CONTEXT_LENGTH * 0.8}") }
 
-internal const val MAX_CONTEXT_LENGTH: Long = 10_000L
+internal const val FIXING_MAX_CONTEXT_LENGTH: Long = 50_000L
 
 internal inline fun <reified T> AIAgentSubgraphBuilderBase<*, *>.nodeLLMCPrintCompressedHistory(
     name: String? = null,
