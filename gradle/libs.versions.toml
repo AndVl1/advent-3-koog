@@ -1,5 +1,5 @@
 [versions]
-koog = "0.5.1"
+koog = "0.5.2"
 kotlin = "2.2.20"
 kotlinx-cli = "0.3.6"
 clikt = "5.0.3"
@@ -28,6 +28,7 @@ kotlinx-rpc-krpc-ktor-server = { module = "org.jetbrains.kotlinx:kotlinx-rpc-krp
 kotlinx-rpc-krpc-ktor-client = { module = "org.jetbrains.kotlinx:kotlinx-rpc-krpc-ktor-client", version.ref = "kotlinx-rpc" }
 koog-ktor = { module = "ai.koog:koog-ktor", version.ref = "koog" }
 koog-agents = { module = "ai.koog:koog-agents", version.ref = "koog" }
+koog-agents-core = { module = "ai.koog:agents-core", version.ref = "koog" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }

@@ -25,30 +25,32 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
 private fun AIAgentSubgraphBuilderBase<GithubChatRequest, Pair<InitialPromptAnalysisModel, Message.Assistant?>>.nodeGithubLLMRequest() =
     node<GithubChatRequest, Pair<InitialPromptAnalysisModel, Message.Assistant?>>("initial-analysis") { request ->
         llm.writeSession {
-            updatePrompt {
-                system("""
-                    You are an expert at analyzing user requests for GitHub repository information.
-                    
-                    Your task is to parse the user's message and extract:
-                    1. GitHub repository URL (must be a valid GitHub repository link)
-                    2. What specific information the user wants to know about the repository
-                    
-                    **Instructions:**
-                    - If you can find a valid GitHub repository URL and understand what the user wants, return a SuccessAnalysisModel
-                    - If the GitHub URL is missing, invalid, or the request is unclear, return a FailedAnalysisModel with a helpful explanation
-                    
-                    **Valid GitHub URL formats:**
-                    - https://github.com/owner/repository
-                    - github.com/owner/repository
-                    - owner/repository (if clearly referring to GitHub)
-                    
-                    **Examples of user requests to analyze:**
-                    - "Analyze https://github.com/microsoft/vscode - I want to know about its architecture"
-                    - "Tell me about the dependencies in facebook/react repository"
-                    - "What's the project structure of https://github.com/tensorflow/tensorflow?"
-                    
-                    Be strict about requiring a valid GitHub repository reference and clear user intent.
-                """.trimIndent())
+            appendPrompt {
+                system(
+                    """
+                                        You are an expert at analyzing user requests for GitHub repository information.
+                                        
+                                        Your task is to parse the user's message and extract:
+                                        1. GitHub repository URL (must be a valid GitHub repository link)
+                                        2. What specific information the user wants to know about the repository
+                                        
+                                        **Instructions:**
+                                        - If you can find a valid GitHub repository URL and understand what the user wants, return a SuccessAnalysisModel
+                                        - If the GitHub URL is missing, invalid, or the request is unclear, return a FailedAnalysisModel with a helpful explanation
+                                        
+                                        **Valid GitHub URL formats:**
+                                        - https://github.com/owner/repository
+                                        - github.com/owner/repository
+                                        - owner/repository (if clearly referring to GitHub)
+                                        
+                                        **Examples of user requests to analyze:**
+                                        - "Analyze https://github.com/microsoft/vscode - I want to know about its architecture"
+                                        - "Tell me about the dependencies in facebook/react repository"
+                                        - "What's the project structure of https://github.com/tensorflow/tensorflow?"
+                                        
+                                        Be strict about requiring a valid GitHub repository reference and clear user intent.
+                                    """.trimIndent()
+                )
 
                 user("User request: ${request.message}")
 
@@ -101,4 +103,4 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, Pair<InitialPromptAnal
                 ) to null
             }
         }
-}
+    }

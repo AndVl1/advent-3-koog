@@ -20,7 +20,7 @@ import ru.andvl.chatter.koog.agents.mcp.getGithubAnalysisStrategy
 import ru.andvl.chatter.koog.agents.mcp.getToolAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
-import ru.andvl.chatter.koog.mcp.GithubMcpProvider
+import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.common.TokenUsage
 import ru.andvl.chatter.koog.model.github.GithubAnalysisResponse
 import ru.andvl.chatter.koog.model.structured.ChatRequest
@@ -226,8 +226,10 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         request: GithubAnalysisRequest,
     ): GithubAnalysisResponse {
         return withContext(Dispatchers.IO) {
-            val mcpClient = GithubMcpProvider.getClient()
-            val toolRegistry = McpToolRegistryProvider.fromClient(mcpClient)
+            val githubMcpClient = McpProvider.getGithubClient()
+            val googleDocsMcpClient = McpProvider.getGoogleDocsClient()
+            val toolRegistry = McpToolRegistryProvider.fromClient(githubMcpClient)
+                .plus(McpToolRegistryProvider.fromClient(googleDocsMcpClient))
                 .plus(ToolRegistry {
                     tools(CurrentTimeToolSet())
                 })
