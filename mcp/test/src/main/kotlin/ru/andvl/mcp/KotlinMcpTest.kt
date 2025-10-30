@@ -10,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.io.asSink
 import kotlinx.io.asSource
 import kotlinx.io.buffered
+import ru.andvl.mcp.googledocs.GoogleDocsMcpTest
 import java.io.File
 
 /**
@@ -40,6 +41,10 @@ fun main() = runBlocking {
 
     // Тестируем Telegraph MCP сервер
     testTelegraphMcpServer(env)
+
+    println("\n" + "=".repeat(50))
+
+    GoogleDocsMcpTest().testGoogleDocsMcpServer()
 }
 
 /**
