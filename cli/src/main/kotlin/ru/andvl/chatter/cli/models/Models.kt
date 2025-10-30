@@ -51,6 +51,7 @@ data class GithubAnalysisRequest(
 @Serializable
 data class GithubAnalysisResponse(
     val analysis: String,
+    val tldr: String,
     val toolCalls: List<String>,
     val model: String? = null,
     val usage: GithubTokenUsageDto? = null

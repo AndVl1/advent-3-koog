@@ -87,12 +87,12 @@ class ChatterCli : CliktCommand(
         try {
             // Call the GitHub analysis API with timeout
             val response = client.analyzeGithub(baseUrl, message)
-            
+
             if (response != null) {
                 // Generate filename with timestamp
                 val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
                 val filename = "github-analysis-$timestamp.md"
-                
+
                 // Create markdown content
                 val markdownContent = buildString {
                     appendLine("# GitHub Repository Analysis")
@@ -100,35 +100,39 @@ class ChatterCli : CliktCommand(
                     appendLine("**Generated:** ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))}")
                     appendLine("**Request:** $message")
                     appendLine()
-                    
+
                     response.model?.let { model ->
                         appendLine("**Model:** $model")
                     }
-                    
+
                     response.usage?.let { usage ->
                         appendLine("**Token Usage:** ${usage.totalTokens} total (${usage.promptTokens} prompt + ${usage.completionTokens} completion)")
                     }
-                    
+
                     if (response.toolCalls.isNotEmpty()) {
                         appendLine("**Tool Calls:** ${response.toolCalls.size}")
                         appendLine("```")
                         response.toolCalls.forEach { appendLine("- $it") }
                         appendLine("```")
                     }
-                    
+                    appendLine()
+                    appendLine("---")
+                    appendLine()
+                    appendLine("**TLDR:** ${response.tldr}")
+
                     appendLine()
                     appendLine("---")
                     appendLine()
                     appendLine(response.analysis)
                 }
-                
+
                 // Save to file
                 val file = File(filename)
                 file.writeText(markdownContent)
-                
+
                 ColorPrinter.printSuccess("📄 Analysis saved to: $filename")
                 ColorPrinter.printInfo("📁 File location: ${file.absolutePath}")
-                
+
             } else {
                 ColorPrinter.printError("❌ Failed to get analysis response")
             }

@@ -7,6 +7,7 @@ import ru.andvl.chatter.koog.model.common.TokenUsage
  */
 data class GithubAnalysisResponse(
     val analysis: String,
+    val tldr: String,
     val toolCalls: List<String> = emptyList(),
     val model: String? = null,
     val usage: TokenUsage? = null

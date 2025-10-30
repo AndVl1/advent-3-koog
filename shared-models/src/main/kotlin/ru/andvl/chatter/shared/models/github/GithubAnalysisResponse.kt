@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class GithubAnalysisResponse(
     val analysis: String,
+    val tldr: String,
     val toolCalls: List<String> = emptyList(),
     val model: String? = null,
     val usage: TokenUsageDto? = null

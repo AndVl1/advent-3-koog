@@ -47,6 +47,7 @@ internal fun getGithubAnalysisStrategy(): AIAgentGraphStrategy<GithubChatRequest
         } transformed {
             ToolChatResponse(
                 response = (it.first as InitialPromptAnalysisModel.FailedAnalysisModel).reason,
+                shortSummary = "",
                 toolCalls = emptyList(),
                 originalMessage = it.second,
                 tokenUsage = TokenUsage(0, 0, 0)

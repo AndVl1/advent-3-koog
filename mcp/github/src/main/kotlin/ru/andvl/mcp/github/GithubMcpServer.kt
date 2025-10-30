@@ -215,6 +215,211 @@ object GithubMcpServer {
         }
 
         server.addTool(
+            name = "list-commits",
+            description = "Get list of commits from repository with optional filtering",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("repository") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("GitHub repository in format 'owner/repo'"))
+                    }
+                    putJsonObject("since") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("ISO 8601 timestamp to filter commits after this date (optional)"))
+                    }
+                    putJsonObject("until") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("ISO 8601 timestamp to filter commits before this date (optional)"))
+                    }
+                    putJsonObject("sha") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Branch or commit SHA to list commits from (optional)"))
+                    }
+                    putJsonObject("path") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Path to filter commits that changed this file/directory (optional)"))
+                    }
+                    putJsonObject("per_page") {
+                        put("type", JsonPrimitive("integer"))
+                        put("description", JsonPrimitive("Number of results per page (1-100, default: 30)"))
+                    }
+                    putJsonObject("page") {
+                        put("type", JsonPrimitive("integer"))
+                        put("description", JsonPrimitive("Page number (default: 1)"))
+                    }
+                },
+                required = listOf("repository")
+            )
+        ) { request ->
+            val (owner, repo) = request.arguments["repository"]?.jsonPrimitive?.content
+                ?.split("/")
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Repository not given or in incorrect format (needed 'owner/repo')")),
+                    isError = true,
+                )
+
+            val since = request.arguments["since"]?.jsonPrimitive?.content
+            val until = request.arguments["until"]?.jsonPrimitive?.content
+            val sha = request.arguments["sha"]?.jsonPrimitive?.content
+            val path = request.arguments["path"]?.jsonPrimitive?.content
+            val perPage = request.arguments["per_page"]?.jsonPrimitive?.intOrNull ?: 30
+            val page = request.arguments["page"]?.jsonPrimitive?.intOrNull ?: 1
+
+            val commits = githubClient.getCommits(owner, repo, since, until, sha, path, perPage, page)
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Unable to get commits for $owner/$repo")),
+                    isError = true
+                )
+
+            val response = json.encodeToString(commits)
+
+            CallToolResult(
+                content = listOf(TextContent(response)),
+            )
+        }
+
+        server.addTool(
+            name = "get-commit-details",
+            description = "Get detailed information about a specific commit including file changes",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("repository") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("GitHub repository in format 'owner/repo'"))
+                    }
+                    putJsonObject("sha") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Commit SHA to get details for"))
+                    }
+                },
+                required = listOf("repository", "sha")
+            )
+        ) { request ->
+            val (owner, repo) = request.arguments["repository"]?.jsonPrimitive?.content
+                ?.split("/")
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Repository not given or in incorrect format (needed 'owner/repo')")),
+                    isError = true,
+                )
+
+            val sha = request.arguments["sha"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Commit SHA is required")),
+                    isError = true
+                )
+
+            val commitDetails = githubClient.getCommitDetails(owner, repo, sha)
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Unable to get commit details for $owner/$repo at SHA '$sha'")),
+                    isError = true
+                )
+
+            val response = json.encodeToString(GitHubCommitDetails.serializer(), commitDetails)
+
+            CallToolResult(
+                content = listOf(TextContent(response)),
+            )
+        }
+
+        server.addTool(
+            name = "get-repository-changes",
+            description = "Get all changes in repository for a specific time period (useful for daily/weekly reports)",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("repository") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("GitHub repository in format 'owner/repo'"))
+                    }
+                    putJsonObject("since") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("ISO 8601 timestamp to get changes after this date"))
+                    }
+                    putJsonObject("until") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("ISO 8601 timestamp to get changes before this date (optional, defaults to now)"))
+                    }
+                },
+                required = listOf("repository", "since")
+            )
+        ) { request ->
+            val (owner, repo) = request.arguments["repository"]?.jsonPrimitive?.content
+                ?.split("/")
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Repository not given or in incorrect format (needed 'owner/repo')")),
+                    isError = true,
+                )
+
+            val since = request.arguments["since"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Since parameter is required (ISO 8601 timestamp)")),
+                    isError = true
+                )
+
+            val until = request.arguments["until"]?.jsonPrimitive?.content
+
+            val changes = githubClient.getRepositoryChanges(owner, repo, since, until)
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Unable to get repository changes for $owner/$repo since $since")),
+                    isError = true
+                )
+
+            val response = json.encodeToString(changes)
+
+            CallToolResult(
+                content = listOf(TextContent(response)),
+            )
+        }
+
+        server.addTool(
+            name = "get-repository-summary",
+            description = "Get comprehensive summary of repository activity including author statistics and top changed files for a time period",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("repository") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("GitHub repository in format 'owner/repo'"))
+                    }
+                    putJsonObject("since") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("ISO 8601 timestamp to get activity summary after this date"))
+                    }
+                    putJsonObject("until") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("ISO 8601 timestamp to get activity summary before this date (optional, defaults to now)"))
+                    }
+                },
+                required = listOf("repository", "since")
+            )
+        ) { request ->
+            val (owner, repo) = request.arguments["repository"]?.jsonPrimitive?.content
+                ?.split("/")
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Repository not given or in incorrect format (needed 'owner/repo')")),
+                    isError = true,
+                )
+
+            val since = request.arguments["since"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Since parameter is required (ISO 8601 timestamp)")),
+                    isError = true
+                )
+
+            val until = request.arguments["until"]?.jsonPrimitive?.content
+
+            val summary = githubClient.getRepositorySummary(owner, repo, since, until)
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("Unable to get repository summary for $owner/$repo since $since")),
+                    isError = true
+                )
+
+            val response = json.encodeToString(GitHubRepositorySummary.serializer(), summary)
+
+            CallToolResult(
+                content = listOf(TextContent(response)),
+            )
+        }
+
+        server.addTool(
             name = "hello-world",
             description = "Say hello world",
             inputSchema = Tool.Input(
@@ -234,7 +439,7 @@ object GithubMcpServer {
             )
         }
 
-        logger.info("📋 Registered GitHub MCP tools: get-repo-base-info, list-repository-contents, get-file-content, get-repository-tree, hello-world")
+        logger.info("📋 Registered GitHub MCP tools: get-repo-base-info, list-repository-contents, get-file-content, get-repository-tree, list-commits, get-commit-details, get-repository-changes, get-repository-summary, hello-world")
         logger.info("🔗 Starting GitHub MCP server on stdin/stdout...")
 
         val transport = StdioServerTransport(

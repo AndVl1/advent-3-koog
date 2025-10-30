@@ -12,6 +12,7 @@ internal class GithubChatRequest(
 
 internal class ToolChatResponse(
     val response: String,
+    val shortSummary: String,
     val toolCalls: List<String>,
     val originalMessage: Message.Assistant?,
     val tokenUsage: TokenUsage,
