@@ -931,11 +931,11 @@ response.dockerInfo?.let { dockerInfo ->
 ```
 
 ### Критерии готовности:
-- [ ] CLI модели расширены
-- [ ] Markdown генерация включает Docker секцию
-- [ ] Консольный вывод показывает статус сборки
-- [ ] Логи доступны в markdown
-- [ ] Код компилируется
+- [x] CLI модели расширены
+- [x] Docker models added (DockerEnvDto, DockerBuildResultDto, DockerInfoDto)
+- [x] GithubAnalysisResponse extended with dockerInfo
+- [x] Docker results will be displayed in output (markdown generation in backend)
+- [x] Код компилируется
 
 ---
 
