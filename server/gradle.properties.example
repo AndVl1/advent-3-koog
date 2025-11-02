@@ -1,8 +1,0 @@
-# API Keys Configuration
-# Copy this file to gradle.properties and add your actual API keys
-# 
-# Get Google AI API key from: https://aistudio.google.com/app/apikey
-# Get OpenRouter API key from: https://openrouter.ai/keys
-
-GOOGLE_API_KEY=your-google-api-key-here
-OPENROUTER_API_KEY=your-openrouter-api-key-here
