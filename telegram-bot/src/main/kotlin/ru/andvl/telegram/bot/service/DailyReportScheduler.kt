@@ -28,17 +28,17 @@ class DailyReportScheduler(
     fun start() {
         val reportTime = parseTime(config.dailyReportTime)
         val delayUntilFirstRun = calculateDelayUntilNextRun(reportTime)
-        
+
         logger.info("Scheduling daily reports at ${config.dailyReportTime}")
         logger.info("Next report will be sent in ${delayUntilFirstRun / 1000 / 60} minutes")
-        
+
         scheduler.scheduleAtFixedRate(
             { runDailyReport() },
             delayUntilFirstRun,
             TimeUnit.DAYS.toMillis(1),
             TimeUnit.MILLISECONDS
         )
-        
+
         scope.launch {
             telegramBot.sendStatusUpdate("🚀 Бот запущен. Ежедневные отчеты будут отправляться в ${config.dailyReportTime}")
         }
@@ -59,7 +59,7 @@ class DailyReportScheduler(
         logger.info("Stopping daily report scheduler")
         scheduler.shutdown()
         scope.cancel()
-        
+
         try {
             if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
                 scheduler.shutdownNow()
@@ -77,7 +77,7 @@ class DailyReportScheduler(
         scope.launch {
             try {
                 logger.info("Starting daily report generation for repository: ${config.targetRepository}")
-                
+
                 // Проверяем доступность сервера
                 if (!analysisClient.checkServerHealth()) {
                     logger.error("Analysis server is not available")
@@ -87,17 +87,17 @@ class DailyReportScheduler(
                     )
                     return@launch
                 }
-                
+
                 // Получаем анализ
                 val analysisResponse = analysisClient.getDailyRepositoryAnalysis(config.targetRepository)
-                
+
                 if (analysisResponse != null) {
                     // Формируем период для отчета
                     val now = java.time.Instant.now()
                     val yesterday = now.minusSeconds(24 * 60 * 60)
                     val formatter = java.time.format.DateTimeFormatter.ISO_INSTANT
                     val period = "${formatter.format(yesterday.atOffset(java.time.ZoneOffset.UTC))} to ${formatter.format(now.atOffset(java.time.ZoneOffset.UTC))}"
-                    
+
                     // Отправляем отчет
                     telegramBot.sendDailyReport(analysisResponse, config.targetRepository, period)
                     logger.info("Daily report sent successfully")
@@ -108,7 +108,7 @@ class DailyReportScheduler(
                         isError = true
                     )
                 }
-                
+
             } catch (e: Exception) {
                 logger.error("Error during daily report generation: ${e.message}", e)
                 telegramBot.sendStatusUpdate(
@@ -137,15 +137,15 @@ class DailyReportScheduler(
     private fun calculateDelayUntilNextRun(targetTime: LocalTime): Long {
         val now = LocalDateTime.now()
         var nextRun = now.toLocalDate().atTime(targetTime)
-        
+
         // Если время уже прошло сегодня, планируем на завтра
         if (nextRun.isBefore(now) || nextRun.isEqual(now)) {
             nextRun = nextRun.plusDays(1)
         }
-        
+
         val delayMillis = java.time.Duration.between(now, nextRun).toMillis()
         logger.debug("Next run scheduled for: $nextRun (delay: ${delayMillis}ms)")
-        
+
         return delayMillis
     }
 }

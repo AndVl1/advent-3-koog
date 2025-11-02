@@ -4,6 +4,9 @@ import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
+import ai.koog.agents.features.tracing.feature.Tracing
+import ai.koog.agents.features.tracing.writer.TraceFeatureMessageFileWriter
+import ai.koog.agents.features.tracing.writer.TraceFeatureMessageLogWriter
 import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.ktor.llm
 import ai.koog.prompt.executor.clients.google.GoogleModels
@@ -13,28 +16,33 @@ import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.structure.StructureFixingParser
 import ai.koog.prompt.structure.executeStructured
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.io.buffered
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import ru.andvl.chatter.koog.agents.mcp.getGithubAnalysisStrategy
 import ru.andvl.chatter.koog.agents.mcp.getToolAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
-import ru.andvl.chatter.koog.mcp.GithubMcpProvider
+import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.common.TokenUsage
-import ru.andvl.chatter.koog.model.github.GithubAnalysisResponse
 import ru.andvl.chatter.koog.model.structured.ChatRequest
 import ru.andvl.chatter.koog.model.structured.ChatResponse
 import ru.andvl.chatter.koog.model.structured.StructuredResponse
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
 import ru.andvl.chatter.koog.tools.CurrentTimeToolSet
 import ru.andvl.chatter.shared.models.ChatHistory
-import ru.andvl.chatter.shared.models.github.GithubAnalysisRequest
+import ru.andvl.chatter.shared.models.github.*
 
 /**
  * Koog service - independent service for LLM interaction with context support
  */
 class KoogService {
+
+    private val logger = KotlinLogging.logger(KoogService::class.java.name)
 
     private fun buildGithubSystemPrompt(): String {
         return """
@@ -144,7 +152,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
             Provider.OPENROUTER -> LLModel(
                 provider = LLMProvider.OpenRouter,
-                id = "z-ai/glm-4.6",
+                id = "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
                 capabilities = listOf(
                     LLMCapability.Temperature,
                     LLMCapability.Completion,
@@ -176,7 +184,16 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     strategy = strategy,
                     agentConfig = agentConfig,
                     id = "structured_agent",
-                    installFeatures = {}
+                    installFeatures = {
+                        install(Tracing) {
+                            val outputPath = Path("/logs/koog_trace.log")
+                            addMessageProcessor(TraceFeatureMessageLogWriter(logger))
+                            addMessageProcessor(TraceFeatureMessageFileWriter(
+                                outputPath,
+                                { path: Path -> SystemFileSystem.sink(path).buffered() }
+                            ))
+                        }
+                    }
                 )
                 val resp = agent.run(request)
                 val structuredResponse = resp.getOrNull()
@@ -226,8 +243,10 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         request: GithubAnalysisRequest,
     ): GithubAnalysisResponse {
         return withContext(Dispatchers.IO) {
-            val mcpClient = GithubMcpProvider.getClient()
-            val toolRegistry = McpToolRegistryProvider.fromClient(mcpClient)
+            val githubMcpClient = McpProvider.getGithubClient()
+            val googleDocsMcpClient = McpProvider.getGoogleDocsClient()
+            val toolRegistry = McpToolRegistryProvider.fromClient(githubMcpClient)
+                .plus(McpToolRegistryProvider.fromClient(googleDocsMcpClient))
                 .plus(ToolRegistry {
                     tools(CurrentTimeToolSet())
                 })
@@ -253,7 +272,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             val agentConfig = AIAgentConfig(
                 prompt = prompt,
                 model = model,
-                maxAgentIterations = 100,
+                maxAgentIterations = 200,
             )
 
             val agent = AIAgent(
@@ -274,12 +293,66 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             try {
                 val result = agent.run(githubRequest)
 
+                // Map repository review if available
+                val repositoryReview = result.repositoryReview?.let { reviewModel ->
+                    RepositoryReviewDto(
+                        generalConditionsReview = RequirementReviewCommentDto(
+                            commentType = reviewModel.generalConditionsReview.commentType,
+                            comment = reviewModel.generalConditionsReview.comment,
+                            fileReference = reviewModel.generalConditionsReview.fileReference,
+                            codeQuote = reviewModel.generalConditionsReview.codeQuote
+                        ),
+                        constraintsReview = reviewModel.constraintsReview.map { constraint ->
+                            RequirementReviewCommentDto(
+                                commentType = constraint.commentType,
+                                comment = constraint.comment,
+                                fileReference = constraint.fileReference,
+                                codeQuote = constraint.codeQuote
+                            )
+                        },
+                        advantagesReview = reviewModel.advantagesReview.map { advantage ->
+                            RequirementReviewCommentDto(
+                                commentType = advantage.commentType,
+                                comment = advantage.comment,
+                                fileReference = advantage.fileReference,
+                                codeQuote = advantage.codeQuote
+                            )
+                        },
+                        attentionPointsReview = reviewModel.attentionPointsReview.map { attention ->
+                            RequirementReviewCommentDto(
+                                commentType = attention.commentType,
+                                comment = attention.comment,
+                                fileReference = attention.fileReference,
+                                codeQuote = attention.codeQuote
+                            )
+                        }
+                    )
+                }
+
+                // Map requirements if available
+                val requirementsDto = result.requirements?.let { req ->
+                    RequirementsAnalysisDto(
+                        generalConditions = req.generalConditions,
+                        importantConstraints = req.importantConstraints,
+                        additionalAdvantages = req.additionalAdvantages,
+                        attentionPoints = req.attentionPoints
+                    )
+                }
+
                 GithubAnalysisResponse(
                     analysis = result.response,
                     tldr = result.shortSummary,
                     toolCalls = result.toolCalls,
                     model = null,
-                    usage = result.tokenUsage
+                    usage = result.tokenUsage?.let { usage ->
+                        TokenUsageDto(
+                            promptTokens = usage.promptTokens,
+                            completionTokens = usage.completionTokens,
+                            totalTokens = usage.totalTokens
+                        )
+                    },
+                    repositoryReview = repositoryReview,
+                    requirements = requirementsDto
                 )
             } catch (e: Exception) {
                 GithubAnalysisResponse(
@@ -287,7 +360,9 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     tldr = "Analysis failed",
                     toolCalls = emptyList(),
                     model = null,
-                    usage = TokenUsage(0, 0, 0)
+                    usage = TokenUsageDto(0, 0, 0),
+                    repositoryReview = null,
+                    requirements = null
                 )
             }
         }

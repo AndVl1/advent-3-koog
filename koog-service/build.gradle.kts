@@ -8,6 +8,7 @@ dependencies {
     implementation(project(":shared-models"))
     implementation(libs.koog.ktor)
     implementation(libs.koog.agents)
+    implementation(libs.koog.agents.core)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)

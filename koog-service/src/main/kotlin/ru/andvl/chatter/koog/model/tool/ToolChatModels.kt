@@ -16,4 +16,6 @@ internal class ToolChatResponse(
     val toolCalls: List<String>,
     val originalMessage: Message.Assistant?,
     val tokenUsage: TokenUsage,
+    val repositoryReview: RepositoryReviewModel? = null,
+    val requirements: RequirementsAnalysisModel? = null,
 )

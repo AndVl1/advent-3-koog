@@ -42,11 +42,15 @@ fun Application.configureFrameworks() {
     val googleApiKey = System.getProperty("GOOGLE_API_KEY")
     val openRouterApiKey = System.getProperty("OPENROUTER_API_KEY")
     val agentRouterApiKey = System.getProperty("AGENTROUTER_API_KEY")
+    val openAIApiKey = System.getProperty("OPENAI_API_KEY")
+    val zaiApiKey = System.getProperty("ZAI_API_KEY")
 
     log.info("Loading API keys from system properties (loaded from .env)...")
     log.info("Google API key: ${googleApiKey?.take(10)}...")
     log.info("OpenRouter API key: ${openRouterApiKey?.take(10)}...")
     log.info("AgentRouter API key: ${agentRouterApiKey?.take(10)}...")
+    log.info("z-ai API key: ${zaiApiKey?.take(10)}...")
+    log.info("openai API key: ${openAIApiKey?.take(10)}...")
 
   dependencies {
         provide { GreetingService { "Hello, World!" } }
@@ -60,8 +64,8 @@ fun Application.configureFrameworks() {
         llm {
             google(apiKey = googleApiKey ?: "your-google-api-key")
             openRouter(apiKey = openRouterApiKey ?: "your-openrouter-api-key")
-            openAI(apiKey = agentRouterApiKey ?: "your-agent-api-key") {
-                baseUrl = "https://agentrouter.org/v1"
+            openAI(apiKey = openAIApiKey ?: "your-agent-api-key") {
+//                baseUrl = "https://agentrouter.org/"
             }
         }
     }
@@ -156,6 +160,8 @@ fun Application.configureFrameworks() {
                         tldr = response.tldr,
                         toolCalls = response.toolCalls,
                         model = response.model,
+                        repositoryReview = response.repositoryReview,
+                        requirements = response.requirements,
                         usage = response.usage?.let { usage ->
                             ru.andvl.chatter.shared.models.github.TokenUsageDto(
                                 promptTokens = usage.promptTokens,
@@ -165,7 +171,7 @@ fun Application.configureFrameworks() {
                         }
                     )
 
-                    log.info("GitHub analysis completed successfully")
+                    log.info("GitHub analysis completed successfully: $githubResponse")
                     call.respond(HttpStatusCode.OK, githubResponse)
                 } catch (e: Exception) {
                     log.error("Error processing GitHub analysis request", e)

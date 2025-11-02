@@ -1,5 +1,6 @@
 package ru.andvl.chatter.cli.models
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import ru.andvl.chatter.shared.models.ConversationState
 import ru.andvl.chatter.shared.models.SharedCheckListItem
@@ -10,10 +11,15 @@ typealias CheckListItem = SharedCheckListItem
 
 @Serializable
 data class ChatContextRequest(
+    @SerialName("message")
     val message: String,
+    @SerialName("conversation_state")
     val conversationState: ConversationState? = null, // Include conversation state for checklist persistence
+    @SerialName("max_history_length")
     val maxHistoryLength: Int = 20,
+    @SerialName("provider")
     val provider: String? = null,
+    @SerialName("system_prompt")
     val systemPrompt: String? = null
 )
 
@@ -22,8 +28,11 @@ data class ChatContextRequest(
  */
 @Serializable
 data class ChatResponseDto(
+    @SerialName("response")
     val response: SharedStructuredResponse,
+    @SerialName("model")
     val model: String? = null,
+    @SerialName("usage")
     val usage: TokenUsageDto? = null
 )
 
@@ -32,8 +41,11 @@ data class ChatResponseDto(
  */
 @Serializable
 data class TokenUsageDto(
+    @SerialName("prompt_tokens")
     val promptTokens: Int,
+    @SerialName("completion_tokens")
     val completionTokens: Int,
+    @SerialName("total_tokens")
     val totalTokens: Int
 )
 
@@ -42,6 +54,7 @@ data class TokenUsageDto(
  */
 @Serializable
 data class GithubAnalysisRequest(
+    @SerialName("user_message")
     val userMessage: String
 )
 
@@ -50,11 +63,20 @@ data class GithubAnalysisRequest(
  */
 @Serializable
 data class GithubAnalysisResponse(
+    @SerialName("analysis")
     val analysis: String,
+    @SerialName("tldr")
     val tldr: String,
+    @SerialName("tool_calls")
     val toolCalls: List<String>,
+    @SerialName("model")
     val model: String? = null,
-    val usage: GithubTokenUsageDto? = null
+    @SerialName("usage")
+    val usage: GithubTokenUsageDto? = null,
+    @SerialName("repository_review")
+    val repositoryReview: RepositoryReviewDto? = null,
+    @SerialName("requirements")
+    val requirements: RequirementsAnalysisDto? = null
 )
 
 /**
@@ -62,7 +84,55 @@ data class GithubAnalysisResponse(
  */
 @Serializable
 data class GithubTokenUsageDto(
+    @SerialName("prompt_tokens")
     val promptTokens: Int,
+    @SerialName("completion_tokens")
     val completionTokens: Int,
+    @SerialName("total_tokens")
     val totalTokens: Int
+)
+
+/**
+ * Requirements analysis DTO
+ */
+@Serializable
+data class RequirementsAnalysisDto(
+    @SerialName("general_conditions")
+    val generalConditions: String,
+    @SerialName("important_constraints")
+    val importantConstraints: List<String>,
+    @SerialName("additional_advantages")
+    val additionalAdvantages: List<String>,
+    @SerialName("attention_points")
+    val attentionPoints: List<String>
+)
+
+/**
+ * Requirement review comment DTO
+ */
+@Serializable
+data class RequirementReviewCommentDto(
+    @SerialName("comment_type")
+    val commentType: String, // PROBLEM, ADVANTAGE, OK
+    @SerialName("comment")
+    val comment: String,
+    @SerialName("file_reference")
+    val fileReference: String?,
+    @SerialName("code_quote")
+    val codeQuote: String?
+)
+
+/**
+ * Repository review DTO
+ */
+@Serializable
+data class RepositoryReviewDto(
+    @SerialName("general_conditions_review")
+    val generalConditionsReview: RequirementReviewCommentDto,
+    @SerialName("constraints_review")
+    val constraintsReview: List<RequirementReviewCommentDto>,
+    @SerialName("advantages_review")
+    val advantagesReview: List<RequirementReviewCommentDto>,
+    @SerialName("attention_points_review")
+    val attentionPointsReview: List<RequirementReviewCommentDto>
 )

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Консольный аппендер, который направляет весь вывод в System.err (stderr) -->
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <!-- Явно указываем, что используем System.err вместо System.out -->
+        <target>System.err</target>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Настройка уровня логирования для MCP SDK (уменьшаем вербозность) -->
+    <logger name="io.modelcontextprotocol.kotlin.sdk" level="WARN" />
+
+    <!-- Настройка уровня логирования для Ktor клиента (уменьшаем вербозность) -->
+    <logger name="io.ktor.client" level="WARN" />
+
+    <!-- Настройка уровня логирования для нашего приложения -->
+    <logger name="ru.andvl.mcp.googledocs" level="INFO" />
+
+    <!-- Корневой логгер: все логи идут в stderr -->
+    <root level="INFO">
+        <appender-ref ref="STDERR" />
+    </root>
+
+</configuration>

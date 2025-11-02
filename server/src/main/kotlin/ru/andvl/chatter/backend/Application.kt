@@ -17,7 +17,9 @@ fun Application.module() {
     // Set environment variables from .env
     dotenv["GOOGLE_API_KEY"]?.let { System.setProperty("GOOGLE_API_KEY", it) }
     dotenv["OPENROUTER_API_KEY"]?.let { System.setProperty("OPENROUTER_API_KEY", it) }
+    dotenv["ZAI_API_KEY"]?.let { System.setProperty("ZAI_API_KEY", it) }
     dotenv["AGENTROUTER_API_KEY"]?.let { System.setProperty("AGENTROUTER_API_KEY", it) }
+    dotenv["OPENAI_API_KEY"]?.let { System.setProperty("OPENAI_API_KEY", it) }
     dotenv["OPENAI_API_KEY"]?.let { System.setProperty("OPENAI_API_KEY", it) }
     configureFrameworks()
     configureSerialization()
