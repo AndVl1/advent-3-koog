@@ -3,6 +3,8 @@ package ru.andvl.chatter.koog.agents.mcp.subgraphs
 import ai.koog.agents.core.agent.entity.createStorageKey
 import ai.koog.agents.core.dsl.builder.*
 import org.slf4j.LoggerFactory
+import ru.andvl.chatter.koog.agents.mcp.subgraphs.requirementsKey
+import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
 import ru.andvl.chatter.koog.model.docker.*
 import ru.andvl.chatter.koog.model.tool.*
 import java.io.File
@@ -10,7 +12,7 @@ import java.io.File
 private val dockerAnalysisKey = createStorageKey<GithubRepositoryAnalysisModel.SuccessAnalysisModel>("docker-analysis")
 private val logger = LoggerFactory.getLogger("docker-subgraph")
 
-internal fun AIAgentGraphStrategyBuilder<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.subgraphDocker():
+internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphDocker():
         AIAgentSubgraphDelegate<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse> =
     subgraph("docker-build") {
         val nodeDockerSystemCheck by nodeDockerSystemCheck()
@@ -187,6 +189,8 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
 private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeDockerResult() =
     node<DockerBuildResult, ToolChatResponse>("docker-result") { buildResult ->
         val analysisResult = storage.get(dockerAnalysisKey)!!
+        val toolCalls = storage.get(toolCallsKey).orEmpty()
+        val requirements = storage.get(requirementsKey)
 
         val dockerInfo = if (analysisResult.dockerEnv != null) {
             DockerInfoModel(
@@ -200,11 +204,11 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
             response = analysisResult.freeFormAnswer +
                 if (dockerInfo != null) "\n\n${formatDockerResults(dockerInfo)}" else "",
             shortSummary = analysisResult.shortSummary,
-            toolCalls = emptyList(),
+            toolCalls = toolCalls,
             originalMessage = null,
             tokenUsage = null,
             repositoryReview = analysisResult.repositoryReview,
-            requirements = null,
+            requirements = requirements,
             dockerInfo = dockerInfo
         )
     }
