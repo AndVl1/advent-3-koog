@@ -15,6 +15,7 @@ import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
 import ru.andvl.chatter.koog.agents.utils.FIXING_MAX_CONTEXT_LENGTH
+import ru.andvl.chatter.koog.model.docker.DockerEnvModel
 import ru.andvl.chatter.koog.model.tool.*
 
 private val originalRequestKey = createStorageKey<InitialPromptAnalysisModel.SuccessAnalysisModel>("original-request")
@@ -27,6 +28,7 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
         val nodeGithubRequest by nodeGithubRequest()
         val nodeExecuteTool by nodeExecuteTool()
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
+
         val nodeProcessResult by nodeProcessResult()
 
         edge(nodeStart forwardTo nodeGithubRequest)
@@ -200,7 +202,8 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                    - Node.js: package.json with scripts
                    - Python: requirements.txt, setup.py
                    - Java: pom.xml (Maven), build.gradle (Gradle)
-                   - Go: go.mod
+                   - Android: app/build.gradle.kts, AndroidManifest.xml
+                   - Go: go.mod, main.go
                    - Ruby: Gemfile
                    - PHP: composer.json
 
@@ -230,13 +233,30 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                    - run_command: "java -jar build/libs/*.jar"
                    - port: 8080
 
+                   **Android projects:**
+                   - base_image: "mingc/android-build-box:latest" or "gradle:7-jdk11" or any suitable for project
+                   - build_command: "./gradlew assembleDebug" or "./gradlew build"
+                   - run_command: "echo 'APK built successfully at app/build/outputs/apk/debug/app-debug.apk'"
+                   - port: null (mobile app, no server port)
+                   - additional_notes: "This is an Android mobile application. Docker is used for building APK, not running a server."
+
+                   **Go projects:**
+                   - base_image: "golang:1.21-alpine" or "golang:1.22-alpine"
+                   - build_command: "go mod download && go build -o app ."
+                   - run_command: "./app"
+                   - port: 8080 (or check main.go for actual port)
+
                 4. Set `docker_env` to **null** if:
                    - Pure library/SDK (no runnable application)
                    - CLI tool without server component
-                   - Requires specific hardware/OS features
+                   - Requires specific hardware/OS features (e.g., iOS apps, desktop GUI apps)
                    - No clear build/run commands
+                   - Simple Android UI app without any build verification requirements
 
-                **Important:** Be conservative - only suggest Docker if clearly applicable.
+                **Important:**
+                - Be conservative - only suggest Docker if clearly applicable
+                - For Android apps: Suggest Docker if build verification or CI/CD is beneficial
+                - For Android apps: Set to null if it's a simple UI-only educational project
                 """.trimIndent()
 
                 val jsonExample = if (originalRequest?.requirements != null) {
@@ -301,16 +321,16 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                       "tldr": "Brief summary of key findings",
                       "repository_review": null,
                       "docker_env": {
-                        "base_image": "node:18-alpine",
-                        "build_command": "npm install",
-                        "run_command": "npm start",
-                        "port": 3000,
-                        "additional_notes": "Optional notes"
+                        "base_image": "mingc/android-build-box:latest",
+                        "build_command": "./gradlew assembleDebug",
+                        "run_command": "echo 'APK built successfully at app/build/outputs/apk/debug/app-debug.apk'",
+                        "port": null,
+                        "additional_notes": "Android mobile application - Docker used for APK building"
                       }
                     }
                     ```
 
-                    Set `docker_env` to null if Docker is not applicable.
+                    Set `docker_env` to null if Docker is not applicable (e.g., pure Android UI apps without backend).
                     """
                 }
 
@@ -371,7 +391,6 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                     """.trimIndent()
                 )
             }
-            val totalToolCalls = storage.get(toolCallsKey).orEmpty()
 
             val response = requestLLMStructured<GithubRepositoryAnalysisModel>(
                 examples = listOf(
@@ -411,7 +430,14 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                     )
                                 )
                             )
-                        } else null
+                        } else null,
+                        dockerEnv = DockerEnvModel(
+                            baseImage = "mingc/android-build-box:latest or any suitable",
+                            buildCommand = "./gradlew assembleDebug",
+                            runCommand = "echo 'APK built successfully at app/build/outputs/apk/debug/app-debug.apk'",
+                            port = null,
+                            additionalNotes = "Android mobile application - Docker used for building APK"
+                        )
                     ),
                     GithubRepositoryAnalysisModel.FailedAnalysisModel("Request was failed because of ...")
                 ),

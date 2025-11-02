@@ -29,7 +29,25 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
         val nodeProcessResult by nodeProcessResult()
 
-        edge(nodeStart forwardTo nodeDockerRequest)
+        edge(nodeStart forwardTo nodeDockerRequest onCondition { it.dockerEnv != null })
+        edge(nodeStart forwardTo nodeFinish onCondition {
+            it.dockerEnv == null
+        } transformed { analysisResult ->
+            val toolCalls = storage.get(toolCallsKey).orEmpty()
+            val requirements = storage.get(requirementsKey)
+
+            ToolChatResponse(
+                response = analysisResult.freeFormAnswer,
+                shortSummary = analysisResult.shortSummary,
+                toolCalls = toolCalls,
+                originalMessage = null,
+                tokenUsage = null,
+                repositoryReview = analysisResult.repositoryReview,
+                requirements = requirements,
+                dockerInfo = null
+            )
+        } )
+
         edge(nodeDockerRequest forwardTo nodeExecuteTool onToolCall { true })
         edge(nodeDockerRequest forwardTo nodeProcessResult onAssistantMessage { true })
         edge(nodeExecuteTool forwardTo nodeSendToolResult)

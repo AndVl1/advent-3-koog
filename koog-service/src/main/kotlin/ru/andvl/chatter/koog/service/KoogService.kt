@@ -283,7 +283,16 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 strategy = strategy,
                 toolRegistry = toolRegistry,
                 id = "github-analyzer",
-                installFeatures = {}
+                installFeatures = {
+                    install(Tracing) {
+                        val outputPath = Path("./logs/koog_trace.log")
+                        addMessageProcessor(TraceFeatureMessageLogWriter(logger) { it.toString().take(200) })
+                        addMessageProcessor(TraceFeatureMessageFileWriter(
+                            outputPath,
+                            { path: Path -> SystemFileSystem.sink(path).buffered() }
+                        ) { it.toString().take(200) })
+                    }
+                }
             )
 
             val githubRequest = GithubChatRequest(
