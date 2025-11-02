@@ -34,6 +34,7 @@ import ru.andvl.chatter.koog.model.structured.ChatResponse
 import ru.andvl.chatter.koog.model.structured.StructuredResponse
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
 import ru.andvl.chatter.koog.tools.CurrentTimeToolSet
+import ru.andvl.chatter.koog.tools.DockerToolSet
 import ru.andvl.chatter.shared.models.ChatHistory
 import ru.andvl.chatter.shared.models.github.*
 
@@ -249,6 +250,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 .plus(McpToolRegistryProvider.fromClient(googleDocsMcpClient))
                 .plus(ToolRegistry {
                     tools(CurrentTimeToolSet())
+                    tools(DockerToolSet())
                 })
             val strategy = getGithubAnalysisStrategy()
             val model = LLModel(

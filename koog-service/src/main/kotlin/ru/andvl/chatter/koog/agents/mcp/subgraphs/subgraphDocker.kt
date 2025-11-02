@@ -2,12 +2,21 @@ package ru.andvl.chatter.koog.agents.mcp.subgraphs
 
 import ai.koog.agents.core.agent.entity.createStorageKey
 import ai.koog.agents.core.dsl.builder.*
+import ai.koog.agents.core.dsl.extension.nodeLLMSendToolResult
+import ai.koog.agents.core.dsl.extension.onAssistantMessage
+import ai.koog.agents.core.dsl.extension.onToolCall
+import ai.koog.agents.core.environment.ReceivedToolResult
+import ai.koog.agents.core.environment.executeTool
+import ai.koog.prompt.llm.LLMCapability
+import ai.koog.prompt.llm.LLMProvider
+import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.message.Message
+import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
-import ru.andvl.chatter.koog.agents.mcp.subgraphs.requirementsKey
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
+import ru.andvl.chatter.koog.agents.utils.FIXING_MAX_CONTEXT_LENGTH
 import ru.andvl.chatter.koog.model.docker.*
 import ru.andvl.chatter.koog.model.tool.*
-import java.io.File
 
 private val dockerAnalysisKey = createStorageKey<GithubRepositoryAnalysisModel.SuccessAnalysisModel>("docker-analysis")
 private val logger = LoggerFactory.getLogger("docker-subgraph")
@@ -15,240 +24,232 @@ private val logger = LoggerFactory.getLogger("docker-subgraph")
 internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphDocker():
         AIAgentSubgraphDelegate<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse> =
     subgraph("docker-build") {
-        val nodeDockerSystemCheck by nodeDockerSystemCheck()
-        val nodeDockerBuild by nodeDockerBuild()
-        val nodeDockerResult by nodeDockerResult()
+        val nodeDockerRequest by nodeDockerRequest()
+        val nodeExecuteTool by nodeExecuteTool()
+        val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
+        val nodeProcessResult by nodeProcessResult()
 
-        edge(nodeStart forwardTo nodeDockerSystemCheck)
-        edge(nodeDockerSystemCheck forwardTo nodeDockerBuild)
-        edge(nodeDockerBuild forwardTo nodeDockerResult)
-        edge(nodeDockerResult forwardTo nodeFinish)
+        edge(nodeStart forwardTo nodeDockerRequest)
+        edge(nodeDockerRequest forwardTo nodeExecuteTool onToolCall { true })
+        edge(nodeDockerRequest forwardTo nodeProcessResult onAssistantMessage { true })
+        edge(nodeExecuteTool forwardTo nodeSendToolResult)
+        edge(nodeSendToolResult forwardTo nodeExecuteTool onToolCall { true })
+        edge(nodeSendToolResult forwardTo nodeProcessResult onAssistantMessage { true })
+        edge(nodeProcessResult forwardTo nodeFinish)
     }
 
-private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeDockerSystemCheck() =
-    node<GithubRepositoryAnalysisModel.SuccessAnalysisModel, Boolean>("docker-system-check") { analysisResult ->
+private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeDockerRequest() =
+    node<GithubRepositoryAnalysisModel.SuccessAnalysisModel, Message.Response>("docker-request") { analysisResult ->
         storage.set(dockerAnalysisKey, analysisResult)
 
-        logger.info("Checking Docker system availability...")
-
-        val dockerAvailable = try {
-            val process = ProcessBuilder("docker", "--version").start()
-            val exitCode = process.waitFor()
-            logger.info("Docker version check exit code: $exitCode")
-            exitCode == 0
-        } catch (e: Exception) {
-            logger.warn("Docker not available: ${e.message}")
-            false
-        }
-
-        logger.info("Docker available: $dockerAvailable")
-        dockerAvailable
-    }
-
-private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeDockerBuild() =
-    node<Boolean, DockerBuildResult>("docker-build") { dockerAvailable ->
-        val analysisResult = storage.get(dockerAnalysisKey)!!
-
-        if (!dockerAvailable || analysisResult.dockerEnv == null) {
-            return@node DockerBuildResult(
-                buildStatus = "NOT_ATTEMPTED",
-                errorMessage = "Docker not available or not configured"
-            )
-        }
-
-        val dockerEnv = analysisResult.dockerEnv
-        logger.info("Starting Docker build with base image: ${dockerEnv.baseImage}")
-
-        var tempDir: File? = null
-        try {
-            // 1. Создать временную директорию
-            tempDir = createTempDir("docker-build-")
-            logger.info("Created temp directory: ${tempDir.absolutePath}")
-
-            // 2. Извлечь URL репозитория
-            val repoUrl = extractRepoUrl(analysisResult.freeFormAnswer)
-            if (repoUrl == null) {
-                logger.error("Could not extract repository URL from analysis")
-                return@node DockerBuildResult(
-                    buildStatus = "FAILED",
-                    errorMessage = "Could not extract repository URL from analysis"
-                )
-            }
-
-            logger.info("Cloning repository: $repoUrl")
-
-            // 3. Клонировать репозиторий
-            val cloneProcess = ProcessBuilder("git", "clone", "--depth", "1", repoUrl, tempDir.absolutePath)
-                .redirectErrorStream(true)
-                .start()
-
-            val cloneOutput = cloneProcess.inputStream.bufferedReader().readText()
-            val cloneExitCode = cloneProcess.waitFor()
-
-            if (cloneExitCode != 0) {
-                logger.error("Failed to clone repository. Exit code: $cloneExitCode")
-                return@node DockerBuildResult(
-                    buildStatus = "FAILED",
-                    errorMessage = "Failed to clone repository",
-                    buildLogs = cloneOutput.lines().takeLast(5)
-                )
-            }
-
-            logger.info("Repository cloned successfully")
-
-            // 4. Создать Dockerfile если отсутствует
-            val dockerFile = tempDir.resolve("Dockerfile")
-            val dockerfileGenerated = !dockerFile.exists()
-
-            if (dockerfileGenerated) {
-                val dockerfileContent = generateDockerfile(dockerEnv)
-                dockerFile.writeText(dockerfileContent)
-                logger.info("Generated Dockerfile:\n$dockerfileContent")
-            } else {
-                logger.info("Using existing Dockerfile")
-            }
-
-            // 5. Запустить Docker build
-            val startTime = System.currentTimeMillis()
-            val imageName = "chatter-test-${System.currentTimeMillis()}"
-
-            logger.info("Starting Docker build with image name: $imageName")
-
-            val buildProcess = ProcessBuilder(
-                "docker", "build",
-                "-t", imageName,
-                "--no-cache",
-                "."
-            )
-                .directory(tempDir)
-                .redirectErrorStream(true)
-                .start()
-
-            val buildLogs = mutableListOf<String>()
-            buildProcess.inputStream.bufferedReader().use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    line?.let {
-                        buildLogs.add(it)
-                        logger.info("Docker build: $it")
-                    }
+        if (analysisResult.dockerEnv == null) {
+            // No Docker environment detected, skip Docker build
+            logger.info("No Docker environment detected, skipping Docker build")
+            llm.writeSession {
+                appendPrompt {
+                    system("Docker build is not applicable for this project.")
+                    user("Skip Docker build.")
                 }
+                requestLLM()
             }
+        } else {
+            // Docker environment detected, proceed with build
+            val dockerEnv = analysisResult.dockerEnv
+            logger.info("Docker environment detected: $dockerEnv")
 
-            val buildExitCode = buildProcess.waitFor()
-            val duration = ((System.currentTimeMillis() - startTime) / 1000).toInt()
+            llm.writeSession {
+                appendPrompt {
+                    system("""
+                        You are a Docker build automation expert. Your task is to build a Docker image for the analyzed GitHub repository.
 
-            logger.info("Docker build completed with exit code: $buildExitCode, duration: ${duration}s")
+                        **Repository Information:**
+                        Repository: ${analysisResult.freeFormAnswer.let { analysis ->
+                            val pattern = "https://github\\.com/[\\w.-]+/[\\w.-]+".toRegex()
+                            pattern.find(analysis)?.value ?: "unknown"
+                        }}
 
-            // 6. Получить размер образа (если успешно)
-            val imageSize = if (buildExitCode == 0) {
-                getImageSize(imageName)
-            } else null
+                        **Docker Configuration:**
+                        - Base Image: ${dockerEnv.baseImage}
+                        - Build Command: ${dockerEnv.buildCommand}
+                        - Run Command: ${dockerEnv.runCommand}
+                        ${if (dockerEnv.port != null) "- Port: ${dockerEnv.port}" else ""}
+                        ${if (dockerEnv.additionalNotes != null) "- Notes: ${dockerEnv.additionalNotes}" else ""}
 
-            // 7. Cleanup образа
-            if (buildExitCode == 0) {
-                try {
-                    ProcessBuilder("docker", "rmi", imageName).start().waitFor()
-                    logger.info("Cleaned up Docker image: $imageName")
-                } catch (e: Exception) {
-                    logger.warn("Failed to cleanup Docker image: ${e.message}")
+                        **Available Docker Tools:**
+                        1. check-docker-availability - Check if Docker is available
+                        2. clone-repository(repositoryUrl) - Clone the repository
+                        3. generate-dockerfile(directoryPath, baseImage, buildCommand, runCommand, port?) - Generate Dockerfile
+                        4. build-docker-image(directoryPath, imageName?) - Build Docker image
+                        5. get-image-size(imageName) - Get image size
+                        6. cleanup-image(imageName) - Remove Docker image
+                        7. cleanup-directory(directoryPath) - Remove temporary directory
+
+                        **Build Process:**
+                        1. Check Docker availability first
+                        2. If Docker is not available, explain why build cannot proceed
+                        3. If Docker is available:
+                           - Clone the repository
+                           - Generate Dockerfile if needed
+                           - Build the Docker image
+                           - Get image size if build succeeds
+                           - Clean up the image
+                           - Clean up the temporary directory
+                        4. After completing all steps, provide a summary in natural language
+
+                        **Important:**
+                        - Use the tools systematically
+                        - Handle errors gracefully
+                        - Always clean up resources (image and directory) at the end
+                        - Provide clear error messages if any step fails
+
+                        Begin the Docker build process now.
+                    """.trimIndent())
+
+                    user("Please build a Docker image for this repository using the provided Docker configuration.")
+
+                    model = model.copy(
+                        capabilities = listOf(
+                            LLMCapability.Temperature,
+                            LLMCapability.Completion,
+                            LLMCapability.Tools,
+                        )
+                    )
                 }
-            }
 
-            // 8. Вернуть результат
-            DockerBuildResult(
-                buildStatus = if (buildExitCode == 0) "SUCCESS" else "FAILED",
-                buildLogs = buildLogs.takeLast(20),
-                imageSize = imageSize,
-                buildDurationSeconds = duration,
-                errorMessage = if (buildExitCode != 0) {
-                    "Docker build failed with exit code $buildExitCode. Check logs for details."
-                } else null
-            )
-
-        } catch (e: Exception) {
-            logger.error("Docker build error", e)
-            DockerBuildResult(
-                buildStatus = "FAILED",
-                errorMessage = "Exception during Docker build: ${e.message}",
-                buildLogs = listOf(e.stackTraceToString().lines().take(10)).flatten()
-            )
-        } finally {
-            // Cleanup temp directory
-            tempDir?.let {
-                try {
-                    it.deleteRecursively()
-                    logger.info("Cleaned up temp directory")
-                } catch (e: Exception) {
-                    logger.warn("Failed to cleanup temp directory: ${e.message}")
-                }
+                requestLLM()
             }
         }
     }
 
-private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeDockerResult() =
-    node<DockerBuildResult, ToolChatResponse>("docker-result") { buildResult ->
+private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeProcessResult() =
+    node<String, ToolChatResponse>("process-docker-result") { rawDockerData ->
         val analysisResult = storage.get(dockerAnalysisKey)!!
-        val toolCalls = storage.get(toolCallsKey).orEmpty()
         val requirements = storage.get(requirementsKey)
+        val toolCalls = storage.get(toolCallsKey).orEmpty()
 
-        val dockerInfo = if (analysisResult.dockerEnv != null) {
-            DockerInfoModel(
-                dockerEnv = analysisResult.dockerEnv,
-                buildResult = buildResult,
-                dockerfileGenerated = buildResult.buildStatus != "NOT_ATTEMPTED"
+        if (analysisResult.dockerEnv == null) {
+            // No Docker build was attempted
+            return@node ToolChatResponse(
+                response = analysisResult.freeFormAnswer,
+                shortSummary = analysisResult.shortSummary,
+                toolCalls = toolCalls,
+                originalMessage = null,
+                tokenUsage = null,
+                repositoryReview = analysisResult.repositoryReview,
+                requirements = requirements,
+                dockerInfo = null
             )
-        } else null
+        }
 
-        ToolChatResponse(
-            response = analysisResult.freeFormAnswer +
-                if (dockerInfo != null) "\n\n${formatDockerResults(dockerInfo)}" else "",
-            shortSummary = analysisResult.shortSummary,
-            toolCalls = toolCalls,
-            originalMessage = null,
-            tokenUsage = null,
-            repositoryReview = analysisResult.repositoryReview,
-            requirements = requirements,
-            dockerInfo = dockerInfo
-        )
+        // Parse Docker build results from LLM response
+        llm.writeSession {
+            appendPrompt {
+                model = model.copy(
+                    id = "z-ai/glm-4.6"
+                )
+
+                system("""
+                    You are an expert at parsing Docker build results and creating structured reports.
+
+                    Your task: Extract Docker build information from the tool execution results and create a structured response.
+
+                    **Required Output Structure:**
+                    ```json
+                    {
+                      "build_status": "SUCCESS" | "FAILED" | "NOT_ATTEMPTED",
+                      "build_logs": ["last 20 lines of build output"],
+                      "image_size": "123MB" or null,
+                      "build_duration_seconds": 45 or null,
+                      "error_message": "error details" or null
+                    }
+                    ```
+
+                    **Instructions:**
+                    - Extract build_status from the tool results (SUCCESS if build-docker-image succeeded, FAILED if it failed, NOT_ATTEMPTED if Docker was not available)
+                    - Extract build_logs from build-docker-image tool results (take last 20 lines)
+                    - Extract image_size from get-image-size tool results
+                    - Calculate build_duration_seconds if available in the logs
+                    - Extract error_message if build failed
+                    - STRICTLY DO NOT USE MARKDOWN TAGS LIKE ```json TO WRAP CONTENT
+                """.trimIndent())
+
+                user("""
+                    Docker build process results:
+
+                    $rawDockerData
+
+                    Please extract and structure the Docker build results according to the format above.
+                """.trimIndent())
+            }
+
+            val response = requestLLMStructured<DockerBuildResult>(
+                examples = listOf(
+                    DockerBuildResult(
+                        buildStatus = "SUCCESS",
+                        buildLogs = listOf("Step 1/5 : FROM node:18-alpine", "Successfully built abc123"),
+                        imageSize = "156MB",
+                        buildDurationSeconds = 45,
+                        errorMessage = null
+                    ),
+                    DockerBuildResult(
+                        buildStatus = "FAILED",
+                        buildLogs = listOf("Error: Cannot find module 'express'"),
+                        imageSize = null,
+                        buildDurationSeconds = 12,
+                        errorMessage = "Build failed: missing dependencies"
+                    )
+                ),
+                fixingParser = StructureFixingParser(
+                    fixingModel = LLModel(
+                        provider = LLMProvider.OpenRouter,
+                        id = "z-ai/glm-4.6",
+                        capabilities = listOf(
+                            LLMCapability.Temperature,
+                            LLMCapability.Completion,
+                        ),
+                        contextLength = FIXING_MAX_CONTEXT_LENGTH,
+                    ),
+                    retries = 3
+                )
+            )
+
+            val dockerBuildResult = if (response.isSuccess) {
+                response.getOrThrow().structure
+            } else {
+                DockerBuildResult(
+                    buildStatus = "FAILED",
+                    errorMessage = "Failed to parse Docker build results: ${response.exceptionOrNull()?.message}"
+                )
+            }
+
+            val dockerInfo = DockerInfoModel(
+                dockerEnv = analysisResult.dockerEnv!!,
+                buildResult = dockerBuildResult,
+                dockerfileGenerated = dockerBuildResult.buildStatus != "NOT_ATTEMPTED"
+            )
+
+            ToolChatResponse(
+                response = analysisResult.freeFormAnswer + "\n\n${formatDockerResults(dockerInfo)}",
+                shortSummary = analysisResult.shortSummary,
+                toolCalls = toolCalls,
+                originalMessage = null,
+                tokenUsage = null,
+                repositoryReview = analysisResult.repositoryReview,
+                requirements = requirements,
+                dockerInfo = dockerInfo
+            )
+        }
     }
 
-private fun generateDockerfile(dockerEnv: DockerEnvModel): String {
-    return """
-FROM ${dockerEnv.baseImage}
+private fun AIAgentSubgraphBuilderBase<*, *>.nodeExecuteTool(
+    name: String? = null
+): AIAgentNodeDelegate<Message.Tool.Call, ReceivedToolResult> =
+    node(name) { toolCall ->
+        val currentCalls = storage.get(toolCallsKey) ?: emptyList()
+        storage.set(toolCallsKey, currentCalls + "${toolCall.tool} ${toolCall.content}")
 
-WORKDIR /app
-
-# Copy project files
-COPY . .
-
-# Build command
-RUN ${dockerEnv.buildCommand}
-
-# Expose port if specified
-${if (dockerEnv.port != null) "EXPOSE ${dockerEnv.port}" else "# No port specified"}
-
-# Run command
-CMD ${dockerEnv.runCommand}
-    """.trimIndent()
-}
-
-private fun extractRepoUrl(analysis: String): String? {
-    val pattern = "https://github\\.com/[\\w.-]+/[\\w.-]+".toRegex()
-    return pattern.find(analysis)?.value
-}
-
-private fun getImageSize(imageName: String): String? {
-    return try {
-        val process = ProcessBuilder("docker", "images", "--format", "{{.Size}}", imageName).start()
-        if (process.waitFor() == 0) {
-            process.inputStream.bufferedReader().readText().trim()
-        } else null
-    } catch (e: Exception) {
-        logger.warn("Failed to get image size: ${e.message}")
-        null
+        environment.executeTool(toolCall)
     }
-}
 
 private fun formatDockerResults(dockerInfo: DockerInfoModel): String {
     val result = dockerInfo.buildResult
