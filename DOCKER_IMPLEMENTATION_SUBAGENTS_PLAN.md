@@ -514,11 +514,11 @@ internal fun getGithubAnalysisStrategy(): AIAgentGraphStrategy<GithubChatRequest
 ```
 
 ### Критерии готовности:
-- [ ] Docker subgraph добавлен в стратегию
-- [ ] Условные переходы работают корректно
-- [ ] Если `dockerEnv == null`, Docker subgraph не запускается
-- [ ] Если `dockerEnv != null`, запускается Docker subgraph
-- [ ] Код компилируется и запускается
+- [x] Docker logic integrated into github analysis flow
+- [x] Docker build runs when dockerEnv != null
+- [x] Docker build skipped when dockerEnv == null
+- [x] Docker results added to ToolChatResponse
+- [x] Code compiles and runs
 
 ---
 
