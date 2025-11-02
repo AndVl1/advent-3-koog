@@ -189,9 +189,60 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                         """.trimIndent()
                 } ?: ""
 
+                val dockerDetectionSection = """
+
+                **DOCKER ENVIRONMENT ANALYSIS:**
+                Analyze if this project can be containerized with Docker:
+
+                1. Check for existing Docker configuration:
+                   - Dockerfile, docker-compose.yml, .dockerignore
+
+                2. Identify project type and technology:
+                   - Node.js: package.json with scripts
+                   - Python: requirements.txt, setup.py
+                   - Java: pom.xml (Maven), build.gradle (Gradle)
+                   - Go: go.mod
+                   - Ruby: Gemfile
+                   - PHP: composer.json
+
+                3. If suitable for Docker, provide `docker_env`:
+
+                   **Node.js projects:**
+                   - base_image: "node:18-alpine" or "node:20-alpine"
+                   - build_command: "npm install" or "yarn install"
+                   - run_command: "npm start" or "node index.js"
+                   - port: 3000 (or from package.json)
+
+                   **Python projects:**
+                   - base_image: "python:3.9-slim" or "python:3.11-slim"
+                   - build_command: "pip install -r requirements.txt"
+                   - run_command: "python app.py" or "gunicorn app:app --bind 0.0.0.0:5000"
+                   - port: 5000 or 8000
+
+                   **Java/Maven projects:**
+                   - base_image: "maven:3.8-openjdk-11"
+                   - build_command: "mvn clean package"
+                   - run_command: "java -jar target/*.jar"
+                   - port: 8080
+
+                   **Java/Gradle projects:**
+                   - base_image: "gradle:7-jdk11"
+                   - build_command: "./gradlew build"
+                   - run_command: "java -jar build/libs/*.jar"
+                   - port: 8080
+
+                4. Set `docker_env` to **null** if:
+                   - Pure library/SDK (no runnable application)
+                   - CLI tool without server component
+                   - Requires specific hardware/OS features
+                   - No clear build/run commands
+
+                **Important:** Be conservative - only suggest Docker if clearly applicable.
+                """.trimIndent()
+
                 val jsonExample = if (originalRequest?.requirements != null) {
                     """
-                    
+
                     **REQUIRED JSON OUTPUT STRUCTURE:**
                     ```json
                     {
@@ -228,52 +279,72 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                             "code_quote": "related code"
                           }
                         ]
+                      },
+                      "docker_env": {
+                        "base_image": "node:18-alpine",
+                        "build_command": "npm install",
+                        "run_command": "npm start",
+                        "port": 3000,
+                        "additional_notes": "Optional notes"
                       }
                     }
                     ```
+
+                    Set `docker_env` to null if Docker is not applicable.
                     """
                 } else {
                     """
-                    
+
                     **REQUIRED JSON OUTPUT STRUCTURE:**
                     ```json
                     {
                       "free_form_github_analysis": "Comprehensive analysis text with repository overview, technical details, etc.",
                       "tldr": "Brief summary of key findings",
-                      "repository_review": null
+                      "repository_review": null,
+                      "docker_env": {
+                        "base_image": "node:18-alpine",
+                        "build_command": "npm install",
+                        "run_command": "npm start",
+                        "port": 3000,
+                        "additional_notes": "Optional notes"
+                      }
                     }
                     ```
+
+                    Set `docker_env` to null if Docker is not applicable.
                     """
                 }
 
                 system(
                     """
                                         You are an expert at synthesizing GitHub repository analysis results into structured JSON reports.
-                                        
+
                                         Your task: Process the raw analysis data and create a comprehensive response following the EXACT JSON structure provided.
-                                        
+
                                         **CRITICAL LANGUAGE REQUIREMENT:**
                                         - The entire response (free_form_github_analysis, tldr, and all comments) MUST be written in the SAME language as the original user request
                                         - If the original user request was in Russian, write the analysis in Russian
                                         - If the original user request was in English, write the analysis in English
                                         - Preserve technical terms but adapt the language style to match the original request
                                         - Maintain professional and technical tone in the target language
-                                        
+
                                         **CRITICAL REQUIREMENTS:**
                                         1. Output MUST be valid JSON matching the provided structure
-                                        2. Field names MUST match exactly: "free_form_github_analysis", "tldr", "repository_review"
+                                        2. Field names MUST match exactly: "free_form_github_analysis", "tldr", "repository_review", "docker_env"
                                         3. Use ONLY actual file references found in the analysis data - DO NOT invent file paths
                                         4. Comment types MUST be exactly: "PROBLEM", "ADVANTAGE", or "OK"
                                         5. If no requirements provided, set repository_review to null
                                         6. STRICTLY DO NOT USE MARKDOWN TAGS LIKE ```json TO WRAP CONTENT
-                                        
+
                                         ${requirementsSection}
+                                        ${dockerDetectionSection}
                                         ${jsonExample}
 
                                         **Content Guidelines:**
                                         - free_form_github_analysis: Comprehensive, structured analysis (include overview, architecture, dependencies, code quality, etc.)
                                         - tldr: Concise 1-2 sentence summary of key findings
                                         - repository_review: ONLY if requirements were provided, evaluate each requirement systematically
+                                        - docker_env: Analyze if project can be containerized, provide Docker configuration or null
                                         - Use professional, technical language in the same language as original request
                                         - Include specific details and examples where relevant
                                         - Base all file references on actual repository analysis - DO NOT fabricate
