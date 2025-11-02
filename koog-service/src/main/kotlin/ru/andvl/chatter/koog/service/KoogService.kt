@@ -8,16 +8,15 @@ import ai.koog.agents.features.tracing.feature.Tracing
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageFileWriter
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageLogWriter
 import ai.koog.agents.mcp.McpToolRegistryProvider
-import ai.koog.ktor.llm
 import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.clients.openrouter.OpenRouterModels
+import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.structure.StructureFixingParser
 import ai.koog.prompt.structure.executeStructured
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.io.buffered
@@ -136,9 +135,9 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
     /**
      * Chat with simple message (backward compatibility)
      */
-    suspend fun chat(message: String, routingContext: RoutingContext): StructuredResponse {
+    suspend fun chat(message: String, promptExecutor: PromptExecutor): StructuredResponse {
         val request = ChatRequest(message = message, currentChecklist = emptyList())
-        return chat(request, routingContext).response
+        return chat(request, promptExecutor).response
     }
 
     /**
@@ -146,7 +145,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
      */
     suspend fun chat(
         request: ChatRequest,
-        routingContext: RoutingContext,
+        promptExecutor: PromptExecutor,
         provider: Provider? = null,
     ): ChatResponse {
         val model: LLModel = when (provider) {
@@ -172,7 +171,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 temperature = null
             )
             try {
-                val executor = routingContext.llm()
+                val executor = promptExecutor
                 val strategy = getStructuredAgentStrategy(systemPrompt)
                 val agentConfig = AIAgentConfig(
                     prompt = prompt,
@@ -214,17 +213,16 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             } catch (e: Exception) {
                 // Fallback to GPTNano
                 try {
-                    val response = with(routingContext) {
-                        routingContext.llm()
-                            .executeStructured<StructuredResponse>(
-                                prompt = prompt,
-                                model = OpenRouterModels.GPT5Nano,
-                                // Optional: provide a fixing parser for error correction
-                                fixingParser = StructureFixingParser(
-                                    fixingModel = OpenRouterModels.GPT5Nano,
-                                    retries = 3
-                                )
+                    val response = with(promptExecutor) {
+                        executeStructured<StructuredResponse>(
+                            prompt = prompt,
+                            model = OpenRouterModels.GPT5Nano,
+                            // Optional: provide a fixing parser for error correction
+                            fixingParser = StructureFixingParser(
+                                fixingModel = OpenRouterModels.GPT5Nano,
+                                retries = 3
                             )
+                        )
                     }
 
                     ChatResponse(
@@ -240,7 +238,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
     }
 
     suspend fun analyseGithub(
-        routingContext: RoutingContext,
+        promptExecutor: PromptExecutor,
         request: GithubAnalysisRequest,
     ): GithubAnalysisResponse {
         return withContext(Dispatchers.IO) {
@@ -278,7 +276,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             )
 
             val agent = AIAgent(
-                promptExecutor = routingContext.llm(),
+                promptExecutor = promptExecutor,
                 agentConfig = agentConfig,
                 strategy = strategy,
                 toolRegistry = toolRegistry,
