@@ -54,7 +54,9 @@ data class GithubAnalysisResponse(
     @SerialName("repository_review")
     val repositoryReview: RepositoryReviewDto? = null,
     @SerialName("requirements")
-    val requirements: RequirementsAnalysisDto? = null
+    val requirements: RequirementsAnalysisDto? = null,
+    @SerialName("docker_info")
+    val dockerInfo: DockerInfoDto? = null
 )
 
 @Serializable

@@ -757,10 +757,10 @@ fun DockerBuildResult.toDto(): DockerBuildResultDto {
 ```
 
 ### Критерии готовности:
-- [ ] DTO модели созданы
-- [ ] `GithubAnalysisResponse` расширен
-- [ ] Conversion функции работают
-- [ ] Код компилируется
+- [x] DTO модели созданы
+- [x] `GithubAnalysisResponse` расширен
+- [x] Conversion функции работают
+- [x] Код компилируется
 
 ---
 

@@ -339,6 +339,27 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     )
                 }
 
+                // Map Docker info if available
+                val dockerInfoDto = result.dockerInfo?.let { dockerInfo ->
+                    DockerInfoDto(
+                        dockerEnv = DockerEnvDto(
+                            baseImage = dockerInfo.dockerEnv.baseImage,
+                            buildCommand = dockerInfo.dockerEnv.buildCommand,
+                            runCommand = dockerInfo.dockerEnv.runCommand,
+                            port = dockerInfo.dockerEnv.port,
+                            additionalNotes = dockerInfo.dockerEnv.additionalNotes
+                        ),
+                        buildResult = DockerBuildResultDto(
+                            buildStatus = dockerInfo.buildResult.buildStatus,
+                            buildLogs = dockerInfo.buildResult.buildLogs,
+                            imageSize = dockerInfo.buildResult.imageSize,
+                            buildDurationSeconds = dockerInfo.buildResult.buildDurationSeconds,
+                            errorMessage = dockerInfo.buildResult.errorMessage
+                        ),
+                        dockerfileGenerated = dockerInfo.dockerfileGenerated
+                    )
+                }
+
                 GithubAnalysisResponse(
                     analysis = result.response,
                     tldr = result.shortSummary,
@@ -352,7 +373,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                         )
                     },
                     repositoryReview = repositoryReview,
-                    requirements = requirementsDto
+                    requirements = requirementsDto,
+                    dockerInfo = dockerInfoDto
                 )
             } catch (e: Exception) {
                 GithubAnalysisResponse(
@@ -362,7 +384,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     model = null,
                     usage = TokenUsageDto(0, 0, 0),
                     repositoryReview = null,
-                    requirements = null
+                    requirements = null,
+                    dockerInfo = null
                 )
             }
         }
