@@ -3,17 +3,222 @@ package ru.andvl.chatter.desktop.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.mikepenz.markdown.m3.Markdown
 import ru.andvl.chatter.desktop.models.AppState
 import ru.andvl.chatter.desktop.models.GithubAnalysisAction
 import ru.andvl.chatter.desktop.models.LLMProvider
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
+
+/**
+ * Generate full markdown report from analysis response
+ */
+private fun generateMarkdownReport(
+    response: ru.andvl.chatter.shared.models.github.GithubAnalysisResponse,
+    userInput: String
+): String {
+    val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+    return buildString {
+        appendLine("# GitHub Repository Analysis Report")
+        appendLine()
+        appendLine("**Generated on:** $timestamp")
+        appendLine()
+        appendLine("## User Request")
+        appendLine("```")
+        appendLine(userInput)
+        appendLine("```")
+        appendLine()
+
+        appendLine("## TL;DR")
+        appendLine(response.tldr)
+        appendLine()
+
+        appendLine("## Detailed Analysis")
+        appendLine(response.analysis)
+        appendLine()
+
+        response.requirements?.let { requirements ->
+            appendLine("## Requirements Analysis")
+            appendLine()
+
+            appendLine("### General Conditions")
+            appendLine(requirements.generalConditions)
+            appendLine()
+
+            if (requirements.importantConstraints.isNotEmpty()) {
+                appendLine("### Important Constraints")
+                requirements.importantConstraints.forEach { constraint ->
+                    appendLine("- $constraint")
+                }
+                appendLine()
+            }
+
+            if (requirements.additionalAdvantages.isNotEmpty()) {
+                appendLine("### Additional Advantages")
+                requirements.additionalAdvantages.forEach { advantage ->
+                    appendLine("- $advantage")
+                }
+                appendLine()
+            }
+
+            if (requirements.attentionPoints.isNotEmpty()) {
+                appendLine("### Attention Points")
+                requirements.attentionPoints.forEach { point ->
+                    appendLine("- $point")
+                }
+                appendLine()
+            }
+        }
+
+        response.userRequestAnalysis?.let { userAnalysis ->
+            appendLine("## Additional Analysis")
+            appendLine(userAnalysis)
+            appendLine()
+        }
+
+        response.repositoryReview?.let { review ->
+            appendLine("## Repository Review")
+            appendLine()
+
+            appendLine("### General Conditions Review")
+            appendLine("**Comment:** ${review.generalConditionsReview.comment}")
+            appendLine("**Type:** ${review.generalConditionsReview.commentType}")
+            review.generalConditionsReview.fileReference?.let {
+                appendLine("**File:** $it")
+            }
+            review.generalConditionsReview.codeQuote?.let {
+                appendLine("**Code:**")
+                appendLine("```")
+                appendLine(it)
+                appendLine("```")
+            }
+            appendLine()
+
+            if (review.constraintsReview.isNotEmpty()) {
+                appendLine("### Constraints Review")
+                review.constraintsReview.forEachIndexed { index, comment ->
+                    appendLine("${index + 1}. **Comment:** ${comment.comment}")
+                    appendLine("   **Type:** ${comment.commentType}")
+                    comment.fileReference?.let { appendLine("   **File:** $it") }
+                    comment.codeQuote?.let {
+                        appendLine("   **Code:**")
+                        appendLine("   ```")
+                        appendLine(it)
+                        appendLine("   ```")
+                    }
+                    appendLine()
+                }
+            }
+
+            if (review.advantagesReview.isNotEmpty()) {
+                appendLine("### Advantages Review")
+                review.advantagesReview.forEachIndexed { index, comment ->
+                    appendLine("${index + 1}. **Comment:** ${comment.comment}")
+                    appendLine("   **Type:** ${comment.commentType}")
+                    comment.fileReference?.let { appendLine("   **File:** $it") }
+                    comment.codeQuote?.let {
+                        appendLine("   **Code:**")
+                        appendLine("   ```")
+                        appendLine(it)
+                        appendLine("   ```")
+                    }
+                    appendLine()
+                }
+            }
+
+            if (review.attentionPointsReview.isNotEmpty()) {
+                appendLine("### Attention Points Review")
+                review.attentionPointsReview.forEachIndexed { index, comment ->
+                    appendLine("${index + 1}. **Comment:** ${comment.comment}")
+                    appendLine("   **Type:** ${comment.commentType}")
+                    comment.fileReference?.let { appendLine("   **File:** $it") }
+                    comment.codeQuote?.let {
+                        appendLine("   **Code:**")
+                        appendLine("   ```")
+                        appendLine(it)
+                        appendLine("   ```")
+                    }
+                    appendLine()
+                }
+            }
+        }
+
+        response.dockerInfo?.let { dockerInfo ->
+            appendLine("## Docker Information")
+            appendLine()
+            appendLine("### Docker Environment")
+            appendLine("- **Base Image:** ${dockerInfo.dockerEnv.baseImage}")
+            appendLine("- **Build Command:** ${dockerInfo.dockerEnv.buildCommand}")
+            appendLine("- **Run Command:** ${dockerInfo.dockerEnv.runCommand}")
+            dockerInfo.dockerEnv.port?.let { appendLine("- **Port:** $it") }
+            dockerInfo.dockerEnv.additionalNotes?.let { appendLine("- **Notes:** $it") }
+            appendLine()
+
+            appendLine("### Build Result")
+            appendLine("- **Status:** ${dockerInfo.buildResult.buildStatus}")
+            dockerInfo.buildResult.imageSize?.let { appendLine("- **Image Size:** $it") }
+            dockerInfo.buildResult.buildDurationSeconds?.let { appendLine("- **Build Duration:** $it seconds") }
+            dockerInfo.buildResult.errorMessage?.let { appendLine("- **Error:** $it") }
+            appendLine("- **Dockerfile Generated:** ${if (dockerInfo.dockerfileGenerated) "Yes" else "No"}")
+            appendLine()
+        }
+
+        if (response.toolCalls.isNotEmpty()) {
+            appendLine("## Tool Calls")
+            response.toolCalls.forEachIndexed { index, toolCall ->
+                appendLine("${index + 1}. $toolCall")
+            }
+            appendLine()
+        }
+
+        appendLine("---")
+        appendLine()
+        response.model?.let { appendLine("**Model Used:** $it") }
+        response.usage?.let {
+            appendLine("**Token Usage:** ${it.totalTokens} total (${it.promptTokens} prompt / ${it.completionTokens} completion)")
+        }
+    }
+}
+
+/**
+ * Save markdown report to file
+ */
+private fun saveMarkdownReport(
+    content: String,
+    onResponse: (String) -> Unit
+) {
+    try {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val fileName = "github_analysis_report_$timestamp.md"
+        val downloadsDir = File(System.getProperty("user.home"), "Downloads")
+        val reportsDir = File(downloadsDir, "ChatterReports")
+
+        if (!reportsDir.exists()) {
+            reportsDir.mkdirs()
+        }
+
+        val file = File(reportsDir, fileName)
+        file.writeText(content)
+
+        onResponse("Report saved to: ${file.absolutePath}")
+    } catch (e: Exception) {
+        onResponse("Error saving report: ${e.message}")
+    }
+}
 
 /**
  * Main GitHub analysis screen
@@ -24,6 +229,9 @@ fun GithubAnalysisScreen(
     onAction: (GithubAnalysisAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var saveMessage by remember { mutableStateOf<String?>(null) }
+    val clipboardManager = LocalClipboardManager.current
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -68,7 +276,7 @@ fun GithubAnalysisScreen(
             item("loading") {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    "Analyzing repository... This may take a minute.",
+                    "Analyzing repository... This may take a few minutes.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -90,8 +298,49 @@ fun GithubAnalysisScreen(
             item("result") {
                 ResultSection(
                     response = result,
-                    onClear = { onAction(GithubAnalysisAction.ClearResult) }
+                    userInput = state.userInput,
+                    onClear = { onAction(GithubAnalysisAction.ClearResult) },
+                    clipboardManager = clipboardManager,
+                    onSaveReport = { content ->
+                        saveMarkdownReport(content) { message ->
+                            saveMessage = message
+                        }
+                    }
                 )
+            }
+        }
+
+        // Save Message Display
+        saveMessage?.let { message ->
+            item("save-message") {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (message.startsWith("Report saved"))
+                            MaterialTheme.colorScheme.primaryContainer
+                        else
+                            MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = message,
+                            color = if (message.startsWith("Report saved"))
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            else
+                                MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = { saveMessage = null }) {
+                            Text("Dismiss")
+                        }
+                    }
+                }
             }
         }
     }
@@ -344,7 +593,10 @@ private fun ErrorCard(
 @Composable
 private fun ResultSection(
     response: ru.andvl.chatter.shared.models.github.GithubAnalysisResponse,
-    onClear: () -> Unit
+    userInput: String,
+    onClear: () -> Unit,
+    clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    onSaveReport: (String) -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -364,8 +616,38 @@ private fun ResultSection(
                     text = "Analysis Result",
                     style = MaterialTheme.typography.titleLarge
                 )
-                TextButton(onClick = onClear) {
-                    Text("Clear")
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Save Report Button
+                    IconButton(
+                        onClick = {
+                            onSaveReport(generateMarkdownReport(response, userInput))
+                        },
+                        modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+                    ) {
+                        Icon(
+                            Icons.Default.Save,
+                            contentDescription = "Save full report",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    // Copy Full Report Button
+                    IconButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(generateMarkdownReport(response, userInput)))
+                        },
+                        modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy full report",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    TextButton(onClick = onClear) {
+                        Text("Clear")
+                    }
                 }
             }
 
@@ -378,11 +660,30 @@ private fun ResultSection(
                 )
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "TL;DR",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "TL;DR",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        IconButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(response.tldr))
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "Copy TL;DR",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = response.tldr,
@@ -393,10 +694,28 @@ private fun ResultSection(
             }
 
             // Main Analysis
-            Text(
-                text = "Detailed Analysis",
-                style = MaterialTheme.typography.titleMedium
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Detailed Analysis",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                IconButton(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(response.analysis))
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy analysis",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
             Markdown(content = response.analysis)
 
             // Requirements Analysis
@@ -448,6 +767,42 @@ private fun ResultSection(
                                 Text("• $point", style = MaterialTheme.typography.bodyMedium)
                             }
                         }
+                    }
+                }
+            }
+
+            // User Request Analysis (if exists)
+            response.userRequestAnalysis?.let { userAnalysis ->
+                HorizontalDivider()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Additional Analysis",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    IconButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(userAnalysis))
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy additional analysis",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Markdown(content = userAnalysis)
                     }
                 }
             }
@@ -552,10 +907,29 @@ private fun ResultSection(
             // Tool Calls
             if (response.toolCalls.isNotEmpty()) {
                 HorizontalDivider()
-                Text(
-                    text = "Tool Calls (${response.toolCalls.size})",
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Tool Calls (${response.toolCalls.size})",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    IconButton(
+                        onClick = {
+                            val toolCallsText = response.toolCalls.joinToString("\n") { "• $it" }
+                            clipboardManager.setText(AnnotatedString(toolCallsText))
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy tool calls",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
                 Card {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         response.toolCalls.forEach { toolCall ->

@@ -37,7 +37,7 @@ internal fun getToolAgentPrompt(
     }
 }
 
-internal fun getGithubAnalysisStrategy(
+internal suspend fun getGithubAnalysisStrategy(
     fixingModel: ai.koog.prompt.llm.LLModel
 ): AIAgentGraphStrategy<GithubChatRequest, ToolChatResponse> =
     strategy("github-analysis-agent") {

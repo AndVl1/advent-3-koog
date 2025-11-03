@@ -18,26 +18,32 @@ internal class DockerToolSet : ToolSet {
     }
 
     @Tool("check-docker-availability")
-    @LLMDescription("Check if Docker is available on the system")
+    @LLMDescription("Check if Docker daemon is running and available on the system")
     fun checkDockerAvailability(): DockerAvailabilityResult {
         return try {
-            val process = ProcessBuilder("docker", "--version").start()
-            val version = process.inputStream.bufferedReader().readText().trim()
-            val exitCode = process.waitFor()
+            // First check if Docker daemon is running with 'docker info'
+            val infoProcess = ProcessBuilder("docker", "info", "--format", "{{.ServerVersion}}")
+                .redirectErrorStream(true)
+                .start()
 
-            if (exitCode == 0) {
-                logger.info("Docker is available: $version")
+            val serverVersion = infoProcess.inputStream.bufferedReader().readText().trim()
+            val infoExitCode = infoProcess.waitFor()
+
+            if (infoExitCode == 0 && serverVersion.isNotEmpty()) {
+                logger.info("Docker daemon is running, version: $serverVersion")
                 DockerAvailabilityResult(
                     available = true,
-                    version = version,
-                    message = "Docker is available"
+                    version = serverVersion,
+                    message = "Docker daemon is running (version: $serverVersion)"
                 )
             } else {
-                logger.warn("Docker check failed with exit code: $exitCode")
+                // Docker CLI might be installed but daemon is not running
+                val errorOutput = infoProcess.errorStream.bufferedReader().readText().trim()
+                logger.warn("Docker daemon is not running. Exit code: $infoExitCode, Error: $errorOutput")
                 DockerAvailabilityResult(
                     available = false,
                     version = null,
-                    message = "Docker check failed with exit code $exitCode"
+                    message = "Docker daemon is not running. Make sure Docker Desktop or Docker Engine is started."
                 )
             }
         } catch (e: Exception) {
@@ -45,7 +51,7 @@ internal class DockerToolSet : ToolSet {
             DockerAvailabilityResult(
                 available = false,
                 version = null,
-                message = "Docker not available: ${e.message}"
+                message = "Docker not available: ${e.message}. Make sure Docker is installed and running."
             )
         }
     }

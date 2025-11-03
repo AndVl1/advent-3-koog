@@ -12,6 +12,7 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
+import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
 import ru.andvl.chatter.koog.model.tool.InitialPromptAnalysisModel
 import ru.andvl.chatter.koog.model.tool.RequirementsAnalysisModel
@@ -21,10 +22,16 @@ private val initialAnalysisKey = createStorageKey<InitialPromptAnalysisModel>("i
 
 private val logger = LoggerFactory.getLogger("mcp")
 
-internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubLLMRequest(
+internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubLLMRequest(
     fixingModel: ai.koog.prompt.llm.LLModel
 ): AIAgentSubgraphDelegate<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel> =
-    subgraph<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>("initial-analysis") {
+    subgraph<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>(
+        "initial-analysis",
+        tools = McpProvider.getGoogleDocsToolsRegistry().tools
+//        toolSelectionStrategy = ToolSelectionStrategy.Tools(
+//            McpProvider.getGoogleDocsToolsDescriptors()
+//        )
+    ) {
         val nodeInitialAnalysis by nodeInitialAnalysis(fixingModel)
         val nodeRequirementsCollection by nodeRequirementsCollection()
         val nodeProcessFinalRequirements by nodeProcessFinalRequirements(fixingModel)
@@ -51,32 +58,36 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                 system("""
                     You are an expert at analyzing user requests for GitHub repository information.
 
-                    Your task is to parse the user's message and extract:
+                    **YOUR TASK:**
+                    Parse the user's message and extract ONLY:
                     1. GitHub repository URL (must be a valid GitHub repository link)
                     2. What specific information the user wants to know about the repository
                     3. Google Docs URL if provided (for external requirements)
-                    4. Basic requirements from user message (if any)
 
-                    **IMPORTANT LANGUAGE REQUIREMENT:**
+                    **IMPORTANT:**
+                    - DO NOT extract or analyze requirements at this stage
+                    - Requirements will be collected later using MCP tools
+                    - ALWAYS set requirements field to null
+                    - This step is ONLY for URL extraction
+
+                    **LANGUAGE REQUIREMENT:**
                     - Detect the language of the original user request
-                    - All extracted requirements and descriptions should be in the SAME language as the original request
-                    - If user writes in Russian, extract requirements in Russian
-                    - If user writes in English, extract requirements in English
-                    - Preserve the original language throughout all analysis
+                    - Extract user request description in the SAME language as the original request
+                    - If user writes in Russian, describe request in Russian
+                    - If user writes in English, describe request in English
 
                     **Instructions:**
                     - If you can find a valid GitHub repository URL, return a SuccessAnalysisModel
                     - If the user provides a Google Docs link, include it in googleDocsUrl field
-                    - Extract basic requirements from user message into RequirementsAnalysisModel if present
-                    - If requirements need to be read from Google Docs, set requirements to null for now
+                    - ALWAYS set requirements to null (requirements collection happens in next steps)
                     - If the GitHub URL is missing or invalid, return a FailedAnalysisModel
                     - Use JSON for return structured result
-                    
+
                     **Valid GitHub URL formats:**
                     - https://github.com/owner/repository
                     - github.com/owner/repository
                     - owner/repository (if clearly referring to GitHub)
-                    
+
                     **Valid Google Docs URL formats:**
                     - https://docs.google.com/document/d/DOCUMENT_ID/edit
                     - https://docs.google.com/document/d/DOCUMENT_ID
@@ -89,6 +100,7 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                     capabilities = listOf(
                         LLMCapability.Temperature,
                         LLMCapability.Completion,
+                        LLMCapability.Tools,
                         LLMCapability.OpenAIEndpoint.Completions
                     )
                 )
@@ -99,18 +111,13 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                     InitialPromptAnalysisModel.SuccessAnalysisModel(
                         githubRepo = "openai/openai-python",
                         userRequest = "Analyze the repository - comprehensive analysis",
-                        requirements = RequirementsAnalysisModel(
-                            generalConditions = "Comprehensive analysis of OpenAI Python library",
-                            importantConstraints = listOf("Focus on API usage patterns"),
-                            additionalAdvantages = listOf("Well-documented code"),
-                            attentionPoints = listOf("Check for deprecated methods")
-                        ),
+                        requirements = null, // Requirements are NOT collected at this stage
                         googleDocsUrl = null
                     ),
                     InitialPromptAnalysisModel.SuccessAnalysisModel(
                         githubRepo = "https://github.com/openai/openai-python",
                         userRequest = "Review according to requirements in Google Docs",
-                        requirements = null, // Will be collected from Google Docs
+                        requirements = null, // Requirements will be collected in next steps
                         googleDocsUrl = "https://docs.google.com/document/d/ABC123/edit"
                     ),
                     InitialPromptAnalysisModel.FailedAnalysisModel(
@@ -164,27 +171,40 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                             system("""
                                 You are an expert at extracting structured requirements from Google Docs documents.
 
-                                Your task is to:
-                                1. Use Google Docs MCP tools to read the document content
-                                2. Extract and provide structured requirements based on the document content
-                                3. Structure the requirements for GitHub repository analysis
+                                **YOUR SOLE TASK:**
+                                Read and extract requirements from the provided Google Docs document. DO NOT analyze any code or search for solutions at this stage.
 
-                                **IMPORTANT LANGUAGE REQUIREMENT:**
+                                **PROCESS:**
+                                1. Use Google Docs MCP tools ONLY to read the document content
+                                2. Extract requirements exactly as written in the document
+                                3. Structure the requirements for later GitHub repository analysis
+                                4. DO NOT use any tools to search GitHub or analyze code
+                                5. DO NOT attempt to find if requirements are met in the repository
+
+                                **IMPORTANT:**
+                                - Your tools should be used ONLY for reading the requirements document
+                                - DO NOT look for code examples or implementations
+                                - DO NOT search for files or code that satisfy requirements
+                                - Focus ONLY on understanding what the requirements are
+                                - The actual verification will happen in a separate analysis stage
+
+                                **LANGUAGE REQUIREMENT:**
                                 - Detect the language of the document content
                                 - Extract requirements in the SAME language as the document
                                 - If document is in Russian, provide requirements in Russian
                                 - If document is in English, provide requirements in English
                                 - Preserve the original language and terminology from the document
 
-                                After reading the document, provide a structured analysis of requirements you found.
-                                Focus on extracting:
+                                **WHAT TO EXTRACT:**
                                 - General conditions (main task/assignment description)
                                 - Important constraints (critical limitations to follow)
-                                - Additional advantages (positive aspects for evaluation) 
+                                - Additional advantages (positive aspects for evaluation)
                                 - Attention points (things requiring careful human review)
+
+                                Remember: You are collecting requirements, not verifying them. Analysis comes later.
                             """.trimIndent())
 
-                            user("Please read the Google Docs document at ${initialAnalysis.googleDocsUrl} and extract structured requirements for analyzing GitHub repository")
+                            user("Please read the Google Docs document at ${initialAnalysis.googleDocsUrl} and extract all requirements. Do NOT analyze any code - just collect the requirements as written in the document.")
                         }
 
                         // This will trigger tool calls to read Google Docs
@@ -216,20 +236,29 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
             llm.writeSession {
                 appendPrompt {
                     system("""
-                        Extract structured requirements from the analysis below and return a complete SuccessAnalysisModel.
-                        
-                        **IMPORTANT LANGUAGE REQUIREMENT:**
+                        Extract structured requirements from the Google Docs analysis below and return a complete SuccessAnalysisModel.
+
+                        **YOUR TASK:**
+                        You are finalizing the requirements collection phase. Structure the extracted requirements without analyzing any code.
+
+                        **IMPORTANT:**
+                        - This is ONLY requirements extraction, NOT code analysis
+                        - DO NOT mention code files or implementations
+                        - DO NOT verify if requirements are met
+                        - Just organize the requirements that were read from the document
+
+                        **LANGUAGE REQUIREMENT:**
                         - Extract requirements in the SAME language as the original user request and Google Docs content
                         - Preserve the original terminology and language style
                         - Do not translate or change the language of requirements
-                        
-                        You need to create RequirementsAnalysisModel with:
+
+                        **CREATE RequirementsAnalysisModel WITH:**
                         - General conditions (main task/assignment description)
                         - Important constraints (critical limitations to follow)
                         - Additional advantages (positive aspects for evaluation)
                         - Attention points (things requiring careful human review)
-                        
-                        Use the original GitHub repository and user request, but update the requirements based on the Google Docs analysis.
+
+                        Use the original GitHub repository and user request, but structure the requirements based on the Google Docs content.
                     """.trimIndent())
 
                     user("""

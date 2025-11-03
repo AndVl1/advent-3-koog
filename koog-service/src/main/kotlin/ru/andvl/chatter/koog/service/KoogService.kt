@@ -3,11 +3,9 @@ package ru.andvl.chatter.koog.service
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.tools.ToolRegistry
-import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.agents.features.tracing.feature.Tracing
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageFileWriter
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageLogWriter
-import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.clients.openrouter.OpenRouterModels
 import ai.koog.prompt.executor.model.PromptExecutor
@@ -33,8 +31,6 @@ import ru.andvl.chatter.koog.model.structured.ChatRequest
 import ru.andvl.chatter.koog.model.structured.ChatResponse
 import ru.andvl.chatter.koog.model.structured.StructuredResponse
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
-import ru.andvl.chatter.koog.tools.CurrentTimeToolSet
-import ru.andvl.chatter.koog.tools.DockerToolSet
 import ru.andvl.chatter.shared.models.ChatHistory
 import ru.andvl.chatter.shared.models.github.*
 
@@ -48,51 +44,28 @@ class KoogService {
     private fun buildGithubSystemPrompt(): String {
         return """
             You are a specialized GitHub repository analyzer AI assistant.
-            
-            Your primary task is to analyze GitHub repositories and provide comprehensive, structured information based on user requests.
-            
-            **Core Responsibilities:**
-            1. Extract and validate GitHub repository URLs from user requests
-            2. Understand user's specific analysis needs and questions
-            3. Use available MCP tools to gather repository information
-            4. Provide structured, detailed analysis with clear sections
-            
-            **Analysis Process:**
-            1. **Initial Request Analysis**: Parse user request to extract:
-               - GitHub repository URL
-               - Specific information the user wants to know
-               - Type of analysis requested (overview, technical details, code quality, etc.)
-            
-            2. **Repository Information Gathering**: Use MCP tools to collect:
-               - Basic repository metadata (name, description, stars, forks, license)
-               - README content and documentation
-               - File structure and project organization
-               - Dependencies and build configuration
-               - Recent activity and commit history
-               - Code samples and architecture insights
-            
-            3. **Structured Response**: Present findings in organized sections:
-               - Repository Overview
-               - Technical Stack & Dependencies
-               - Project Structure
-               - Key Features & Functionality
-               - Code Quality & Best Practices
-               - Recent Activity & Maintenance
-               - Recommendations or specific answers to user questions
-            
-            **Response Guidelines:**
-            - Be comprehensive but focused on user's specific questions
-            - Use clear, professional language
-            - Include relevant code snippets or examples when helpful
-            - Provide actionable insights and recommendations
-            - If information is not available, clearly state what couldn't be accessed
-            
-            **Error Handling:**
-            - If repository URL is invalid or inaccessible, explain the issue clearly
-            - If user request is unclear, ask for clarification
-            - If tools fail, explain what information could not be retrieved
-            
-            Always maintain a helpful, analytical tone and provide value to developers seeking to understand GitHub repositories.
+
+            Your role is to help users analyze GitHub repositories by:
+            - Understanding user requests and extracting necessary information (repository URLs, requirements documents)
+            - Using available MCP tools to gather comprehensive repository data
+            - Analyzing code, structure, dependencies, and compliance with requirements
+            - Providing detailed, structured analysis reports
+            - Evaluating Docker containerization possibilities
+
+            **Key Principles:**
+            - Follow multi-stage analysis workflow (URL extraction → requirements collection → repository analysis → Docker build)
+            - Use MCP tools systematically to gather factual information
+            - Maintain language consistency with user's original request (Russian/English)
+            - Provide specific evidence (file references, code quotes) when evaluating requirements
+            - Be thorough but focused on user's specific needs
+
+            **Available Tool Categories:**
+            - GitHub MCP tools: repository metadata, files, content, commits, issues
+            - Google Docs MCP tools: read requirements documents
+            - Docker tools: build and verify containerization
+            - Current time tools: timestamp information
+
+            Work systematically through each stage of analysis, using appropriate tools and providing comprehensive, actionable insights.
         """.trimIndent()
     }
 
@@ -244,14 +217,10 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         llmConfig: LLMConfig,
     ): GithubAnalysisResponse {
         return withContext(Dispatchers.IO) {
-            val githubMcpClient = McpProvider.getGithubClient()
-            val googleDocsMcpClient = McpProvider.getGoogleDocsClient()
-            val toolRegistry = McpToolRegistryProvider.fromClient(githubMcpClient)
-                .plus(McpToolRegistryProvider.fromClient(googleDocsMcpClient))
-                .plus(ToolRegistry {
-                    tools(CurrentTimeToolSet())
-                    tools(DockerToolSet())
-                })
+            val toolRegistry = McpProvider.getGithubToolsRegistry()
+                .plus(McpProvider.getGoogleDocsToolsRegistry())
+                .plus(McpProvider.getDockerToolsRegistry())
+                .plus(McpProvider.getUtilsToolsRegistry())
             //  Map provider string to LLMProvider enum
             val llmProvider = when (llmConfig.provider.uppercase()) {
                 "OPEN_ROUTER", "OPENROUTER" -> LLMProvider.OpenRouter
@@ -275,7 +244,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
 
             val systemPrompt = buildGithubSystemPrompt()
             val prompt = getToolAgentPrompt(
-                systemPrompt = systemPrompt,
+                systemPrompt = "", //systemPrompt,
                 request = ChatRequest(message = request.userMessage),
                 temperature = 0.3
             )
@@ -402,6 +371,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     },
                     repositoryReview = repositoryReview,
                     requirements = requirementsDto,
+                    userRequestAnalysis = result.userRequestAnalysis,
                     dockerInfo = dockerInfoDto
                 )
             } catch (e: Exception) {
@@ -413,6 +383,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     usage = TokenUsageDto(0, 0, 0),
                     repositoryReview = null,
                     requirements = null,
+                    userRequestAnalysis = null,
                     dockerInfo = null
                 )
             }

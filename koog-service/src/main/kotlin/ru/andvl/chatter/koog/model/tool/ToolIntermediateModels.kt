@@ -108,6 +108,11 @@ internal sealed interface GithubRepositoryAnalysisModel {
         @property:LLMDescription("Structured repository review based on requirements if available")
         @SerialName("repository_review")
         val repositoryReview: RepositoryReviewModel?,
+        @property:LLMDescription("Response to user's specific questions that are NOT covered by requirements (general conditions, constraints, advantages, attention points). " +
+                "Must be full answer, but not its summary. " +
+                "Set to null if user's request is fully covered by requirements or if no specific questions asked. Field name: user_request_analysis")
+        @SerialName("user_request_analysis")
+        val userRequestAnalysis: String? = null,
         @property:LLMDescription("Docker environment configuration if project can be containerized. Set to null if Docker is not applicable. Field name: docker_env")
         @SerialName("docker_env")
         val dockerEnv: DockerEnvModel? = null

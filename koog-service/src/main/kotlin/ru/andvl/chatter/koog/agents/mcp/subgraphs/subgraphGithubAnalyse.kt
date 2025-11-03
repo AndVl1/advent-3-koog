@@ -12,6 +12,7 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
+import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.docker.DockerEnvModel
 import ru.andvl.chatter.koog.model.tool.*
 
@@ -19,14 +20,21 @@ private val originalRequestKey = createStorageKey<InitialPromptAnalysisModel.Suc
 internal val requirementsKey = createStorageKey<RequirementsAnalysisModel>("requirements")
 private val logger = LoggerFactory.getLogger("mcp")
 
-internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubAnalyze(
+
+
+internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubAnalyze(
     fixingModel: ai.koog.prompt.llm.LLModel
 ): AIAgentSubgraphDelegate<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel> =
-    subgraph("github-analysis") {
+    subgraph(
+        name = "github-analysis",
+        tools = McpProvider.getGithubToolsRegistry().tools
+//        toolSelectionStrategy = ai.koog.agents.core.agent.entity.ToolSelectionStrategy.Tools(
+//            McpProvider.getGithubToolsDescriptors() + McpProvider.getUtilsToolsDescriptors()
+//        )
+    ) {
         val nodeGithubRequest by nodeGithubRequest()
         val nodeExecuteTool by nodeExecuteTool()
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
-
         val nodeProcessResult by nodeProcessResult(fixingModel)
 
         edge(nodeStart forwardTo nodeGithubRequest)
@@ -150,10 +158,12 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
     node<String, GithubRepositoryAnalysisModel.SuccessAnalysisModel>("process-llm-result") { rawAnalysisData ->
         val originalRequest = storage.get(originalRequestKey)
         llm.writeSession {
+            changeLLMParams(
+                newParams = prompt.params.copy(
+                    temperature = 0.0,
+                )
+            )
             appendPrompt {
-//                model = model.copy(
-//                    id = "z-ai/glm-4.6"
-//                )
 
                 val requirementsSection = originalRequest?.requirements?.let { req ->
                     """
@@ -260,81 +270,6 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                 - For Android apps: Set to null if it's a simple UI-only educational project
                 """.trimIndent()
 
-                val jsonExample = if (originalRequest?.requirements != null) {
-                    """
-
-                    **REQUIRED JSON OUTPUT STRUCTURE:**
-                    ```json
-                    {
-                      "free_form_github_analysis": "Comprehensive analysis text with repository overview, technical details, architecture, dependencies, etc.",
-                      "tldr": "Brief summary of key findings",
-                      "repository_review": {
-                        "general_conditions_review": {
-                          "comment_type": "OK|PROBLEM|ADVANTAGE",
-                          "comment": "Detailed evaluation of general conditions",
-                          "file_reference": "path/to/file.ext:123",
-                          "code_quote": "actual code snippet"
-                        },
-                        "constraints_review": [
-                          {
-                            "comment_type": "OK|PROBLEM|ADVANTAGE",
-                            "comment": "Evaluation of first constraint",
-                            "file_reference": "path/to/file.ext:456",
-                            "code_quote": "relevant code"
-                          }
-                        ],
-                        "advantages_review": [
-                          {
-                            "comment_type": "OK|PROBLEM|ADVANTAGE",
-                            "comment": "Evaluation of first advantage",
-                            "file_reference": "path/to/file.ext:789",
-                            "code_quote": "supporting code"
-                          }
-                        ],
-                        "attention_points_review": [
-                          {
-                            "comment_type": "OK|PROBLEM|ADVANTAGE",
-                            "comment": "Analysis of attention point",
-                            "file_reference": "path/to/file.ext:012",
-                            "code_quote": "related code"
-                          }
-                        ]
-                      },
-                      "docker_env": {
-                        "base_image": "node:18-alpine",
-                        "build_command": "npm install",
-                        "run_command": "npm start",
-                        "port": 3000,
-                        "additional_notes": "Optional notes"
-                      }
-                    }
-                    ```
-
-                    Set `docker_env` to null if Docker is not applicable.
-                    """
-                } else {
-                    """
-
-                    **REQUIRED JSON OUTPUT STRUCTURE:**
-                    ```json
-                    {
-                      "free_form_github_analysis": "Comprehensive analysis text with repository overview, technical details, etc.",
-                      "tldr": "Brief summary of key findings",
-                      "repository_review": null,
-                      "docker_env": {
-                        "base_image": "mingc/android-build-box:latest",
-                        "build_command": "./gradlew assembleDebug",
-                        "run_command": "echo 'APK built successfully at app/build/outputs/apk/debug/app-debug.apk'",
-                        "port": null,
-                        "additional_notes": "Android mobile application - Docker used for APK building"
-                      }
-                    }
-                    ```
-
-                    Set `docker_env` to null if Docker is not applicable (e.g., pure Android UI apps without backend).
-                    """
-                }
-
                 system(
                     """
                                         You are an expert at synthesizing GitHub repository analysis results into structured JSON reports.
@@ -350,7 +285,7 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
 
                                         **CRITICAL REQUIREMENTS:**
                                         1. Output MUST be valid JSON matching the provided structure
-                                        2. Field names MUST match exactly: "free_form_github_analysis", "tldr", "repository_review", "docker_env"
+                                        2. Field names MUST match exactly: "free_form_github_analysis", "tldr", "repository_review", "user_request_analysis", "docker_env"
                                         3. Use ONLY actual file references found in the analysis data - DO NOT invent file paths
                                         4. Comment types MUST be exactly: "PROBLEM", "ADVANTAGE", or "OK"
                                         5. If no requirements provided, set repository_review to null
@@ -358,12 +293,13 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
 
                                         ${requirementsSection}
                                         ${dockerDetectionSection}
-                                        ${jsonExample}
+                                        
 
                                         **Content Guidelines:**
                                         - free_form_github_analysis: Comprehensive, structured analysis (include overview, architecture, dependencies, code quality, etc.)
                                         - tldr: Concise 1-2 sentence summary of key findings
                                         - repository_review: ONLY if requirements were provided, evaluate each requirement systematically
+                                        - user_request_analysis: CRITICAL - Use ONLY for user's specific questions NOT covered by requirements (general conditions, constraints, advantages, attention points). Must be full detailed answer, not summary. Set to null if user's request is fully covered by requirements or no specific questions asked.
                                         - docker_env: Analyze if project can be containerized, provide Docker configuration or null
                                         - Use professional, technical language in the same language as original request
                                         - Include specific details and examples where relevant
@@ -378,17 +314,30 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                         **IMPORTANT:** Remember to write the entire response in the SAME language as the original user request. Detect the language from the original request and maintain it throughout the analysis.
                                         
                                         **Original User Request:** ${originalRequest?.userRequest}
-                                        
-                                        **Analysis Data:**
-                                        $rawAnalysisData
-                                        
+
+                                        **IMPORTANT - OUTPUT FORMATTING:**
+                                        If user explicitly requested:
+                                        - Tree structure (древовидную структуру)
+                                        - File listings
+                                        - Directory contents
+                                        - Code examples
+                                        - ANY SPECIFIC FORMAT
+
+                                        Then INCLUDE THE EXACT OUTPUT in user_request_analysis field, NOT a description or summary!
+                                        Do not transform or summarize unless explicitly asked.
+
                                         **Instructions:**
                                         1. Extract comprehensive repository information for free_form_github_analysis
-                                        2. Create concise summary for tldr
-                                        3. If requirements were provided, evaluate each requirement systematically in repository_review
-                                        4. Use ONLY file references and code snippets that were actually found in the analysis
-                                        5. Output valid JSON matching the structure exactly
-                                        6. Write ALL content in the same language as the original user request
+                                        2. **CRITICAL for user_request_analysis**: Check if user's request contains specific questions BEYOND the requirements (general conditions, constraints, advantages, attention points)
+                                        3. If user asked specific questions NOT covered by requirements, provide FULL DETAILED answer (not summary) in user_request_analysis field
+                                        4. **IMPORTANT**: If user explicitly asks for tree structure, file listings, directory contents, or any specific output format - INCLUDE IT EXACTLY as requested in user_request_analysis
+                                        5. If user's request is fully covered by requirements OR no specific questions asked, set user_request_analysis to null
+                                        6. Create concise summary for tldr
+                                        7. If requirements were provided, evaluate each requirement systematically in repository_review
+                                        8. Use ONLY file references and code snippets that were actually found in the analysis
+                                        9. Output valid JSON matching the structure exactly
+                                        10. Write ALL content in the same language as the original user request
+                                        11. **IMPORTANT**: Do NOT skip user_request_analysis if user asks specific technical questions about the repository that aren't covered by requirements
                                     """.trimIndent()
                 )
             }
@@ -432,6 +381,7 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                 )
                             )
                         } else null,
+                        userRequestAnalysis = "User asked about specific feature X which is implemented in module Y",
                         dockerEnv = DockerEnvModel(
                             baseImage = "mingc/android-build-box:latest or any suitable",
                             buildCommand = "./gradlew assembleDebug",

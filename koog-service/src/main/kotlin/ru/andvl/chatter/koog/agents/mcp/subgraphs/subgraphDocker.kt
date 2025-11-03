@@ -8,10 +8,13 @@ import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.environment.ReceivedToolResult
 import ai.koog.agents.core.environment.executeTool
 import ai.koog.prompt.llm.LLMCapability
+import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
+import ru.andvl.chatter.koog.agents.utils.getLatestTotalTokenUsage
+import ru.andvl.chatter.koog.model.common.TokenUsage
 import ru.andvl.chatter.koog.model.docker.DockerBuildResult
 import ru.andvl.chatter.koog.model.docker.DockerInfoModel
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
@@ -22,7 +25,7 @@ private val dockerAnalysisKey = createStorageKey<GithubRepositoryAnalysisModel.S
 private val logger = LoggerFactory.getLogger("docker-subgraph")
 
 internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphDocker(
-    fixingModel: ai.koog.prompt.llm.LLModel
+    fixingModel: LLModel
 ): AIAgentSubgraphDelegate<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse> =
     subgraph("docker-build") {
         val nodeDockerRequest by nodeDockerRequest()
@@ -45,6 +48,7 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
                 tokenUsage = null,
                 repositoryReview = analysisResult.repositoryReview,
                 requirements = requirements,
+                userRequestAnalysis = analysisResult.userRequestAnalysis,
                 dockerInfo = null
             )
         } )
@@ -142,7 +146,7 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
     }
 
 private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeProcessResult(
-    fixingModel: ai.koog.prompt.llm.LLModel
+    fixingModel: LLModel
 ) =
     node<String, ToolChatResponse>("process-docker-result") { rawDockerData ->
         val analysisResult = storage.get(dockerAnalysisKey)!!
@@ -156,9 +160,10 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
                 shortSummary = analysisResult.shortSummary,
                 toolCalls = toolCalls,
                 originalMessage = null,
-                tokenUsage = null,
+                tokenUsage = getLatestTotalTokenUsage(),
                 repositoryReview = analysisResult.repositoryReview,
                 requirements = requirements,
+                userRequestAnalysis = analysisResult.userRequestAnalysis,
                 dockerInfo = null
             )
         }
@@ -247,9 +252,16 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
                 shortSummary = analysisResult.shortSummary,
                 toolCalls = toolCalls,
                 originalMessage = null,
-                tokenUsage = null,
+                tokenUsage = response.getOrNull()?.message?.metaInfo?.let {
+                    TokenUsage(
+                        promptTokens = it.inputTokensCount ?: 0,
+                        completionTokens = it.outputTokensCount ?: 0,
+                        totalTokens = it.totalTokensCount ?: 0,
+                    )
+                },
                 repositoryReview = analysisResult.repositoryReview,
                 requirements = requirements,
+                userRequestAnalysis = analysisResult.userRequestAnalysis,
                 dockerInfo = dockerInfo
             )
         }

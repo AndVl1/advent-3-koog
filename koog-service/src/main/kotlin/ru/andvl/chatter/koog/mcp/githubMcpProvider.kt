@@ -1,5 +1,9 @@
 package ru.andvl.chatter.koog.mcp
 
+import ai.koog.agents.core.tools.ToolDescriptor
+import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.core.tools.reflect.tools
+import ai.koog.agents.mcp.McpToolRegistryProvider
 import io.modelcontextprotocol.kotlin.sdk.Implementation
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
@@ -9,6 +13,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.io.asSink
 import kotlinx.io.asSource
 import kotlinx.io.buffered
+import ru.andvl.chatter.koog.tools.CurrentTimeToolSet
+import ru.andvl.chatter.koog.tools.DockerToolSet
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -30,6 +36,16 @@ object McpProvider {
     private var githubClient: Client? = null
     private val githubMutex = Mutex()
 
+    suspend fun getGithubToolsRegistry(): ToolRegistry {
+        return McpToolRegistryProvider.fromClient(getGithubClient())
+    }
+
+    suspend fun getGithubToolsDescriptors(): List<ToolDescriptor> {
+        return getGithubToolsRegistry()
+            .tools
+            .map { it.descriptor }
+    }
+
     suspend fun getGithubClient(): Client {
         return githubClient ?: githubMutex.withLock {
             if (githubClient != null) {
@@ -39,6 +55,40 @@ object McpProvider {
                     .also { githubClient = it }
             }
         }
+    }
+
+    suspend fun getGoogleDocsToolsRegistry(): ToolRegistry {
+        return McpToolRegistryProvider.fromClient(getGoogleDocsClient())
+    }
+
+    suspend fun getGoogleDocsToolsDescriptors(): List<ToolDescriptor> {
+        return getGoogleDocsToolsRegistry()
+            .tools
+            .map { it.descriptor }
+    }
+
+    fun getDockerToolsRegistry(): ToolRegistry {
+        return ToolRegistry {
+            tools(DockerToolSet())
+        }
+    }
+
+    fun getDockerToolsDescriptors(): List<ToolDescriptor> {
+        return getDockerToolsRegistry()
+            .tools
+            .map { it.descriptor }
+    }
+
+    fun getUtilsToolsRegistry(): ToolRegistry {
+        return ToolRegistry {
+            tools(CurrentTimeToolSet())
+        }
+    }
+
+    fun getUtilsToolsDescriptors(): List<ToolDescriptor> {
+        return getUtilsToolsRegistry()
+            .tools
+            .map { it.descriptor }
     }
 
     private suspend fun createGoogleDocsClient(): Client {
