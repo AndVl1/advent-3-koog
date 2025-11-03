@@ -52,7 +52,7 @@ fun Application.configureFrameworks() {
     log.info("z-ai API key: ${zaiApiKey?.take(10)}...")
     log.info("openai API key: ${openAIApiKey?.take(10)}...")
 
-  dependencies {
+    dependencies {
         provide { GreetingService { "Hello, World!" } }
     }
     install(ContentNegotiation) {

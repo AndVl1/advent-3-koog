@@ -7,6 +7,7 @@ import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.openai.OpenAIChatParams
+import ru.andvl.chatter.koog.agents.mcp.subgraphs.subgraphDocker
 import ru.andvl.chatter.koog.agents.mcp.subgraphs.subgraphGithubAnalyze
 import ru.andvl.chatter.koog.agents.mcp.subgraphs.subgraphGithubLLMRequest
 import ru.andvl.chatter.koog.model.structured.ChatRequest
@@ -40,8 +41,10 @@ internal fun getGithubAnalysisStrategy(): AIAgentGraphStrategy<GithubChatRequest
     strategy("github-analysis-agent") {
         val initialRequestNode by subgraphGithubLLMRequest()
         val githubAnalysisSubgraph by subgraphGithubAnalyze()
+        val dockerSubgraph by subgraphDocker()
 
         edge(nodeStart forwardTo initialRequestNode)
         edge(initialRequestNode forwardTo githubAnalysisSubgraph)
-        edge(githubAnalysisSubgraph forwardTo nodeFinish)
+        edge(githubAnalysisSubgraph forwardTo dockerSubgraph)
+        edge(dockerSubgraph forwardTo nodeFinish)
     }

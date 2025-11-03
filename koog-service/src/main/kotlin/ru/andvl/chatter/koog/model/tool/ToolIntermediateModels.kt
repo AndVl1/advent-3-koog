@@ -3,6 +3,7 @@ package ru.andvl.chatter.koog.model.tool
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import ru.andvl.chatter.koog.model.docker.DockerEnvModel
 
 @LLMDescription("Requirements extracted from user request or external documents")
 @Serializable
@@ -106,7 +107,10 @@ internal sealed interface GithubRepositoryAnalysisModel {
         val shortSummary: String,
         @property:LLMDescription("Structured repository review based on requirements if available")
         @SerialName("repository_review")
-        val repositoryReview: RepositoryReviewModel?
+        val repositoryReview: RepositoryReviewModel?,
+        @property:LLMDescription("Docker environment configuration if project can be containerized. Set to null if Docker is not applicable. Field name: docker_env")
+        @SerialName("docker_env")
+        val dockerEnv: DockerEnvModel? = null
     ) : GithubRepositoryAnalysisModel
 
     @LLMDescription("Model to be sent if needed info can't be found from user request")

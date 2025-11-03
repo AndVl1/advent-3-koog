@@ -34,6 +34,7 @@ import ru.andvl.chatter.koog.model.structured.ChatResponse
 import ru.andvl.chatter.koog.model.structured.StructuredResponse
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
 import ru.andvl.chatter.koog.tools.CurrentTimeToolSet
+import ru.andvl.chatter.koog.tools.DockerToolSet
 import ru.andvl.chatter.shared.models.ChatHistory
 import ru.andvl.chatter.shared.models.github.*
 
@@ -249,6 +250,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 .plus(McpToolRegistryProvider.fromClient(googleDocsMcpClient))
                 .plus(ToolRegistry {
                     tools(CurrentTimeToolSet())
+                    tools(DockerToolSet())
                 })
             val strategy = getGithubAnalysisStrategy()
             val model = LLModel(
@@ -281,7 +283,16 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 strategy = strategy,
                 toolRegistry = toolRegistry,
                 id = "github-analyzer",
-                installFeatures = {}
+                installFeatures = {
+                    install(Tracing) {
+                        val outputPath = Path("./logs/koog_trace.log")
+                        addMessageProcessor(TraceFeatureMessageLogWriter(logger) { it.toString().take(200) })
+                        addMessageProcessor(TraceFeatureMessageFileWriter(
+                            outputPath,
+                            { path: Path -> SystemFileSystem.sink(path).buffered() }
+                        ) { it.toString().take(200) })
+                    }
+                }
             )
 
             val githubRequest = GithubChatRequest(
@@ -339,6 +350,27 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     )
                 }
 
+                // Map Docker info if available
+                val dockerInfoDto = result.dockerInfo?.let { dockerInfo ->
+                    DockerInfoDto(
+                        dockerEnv = DockerEnvDto(
+                            baseImage = dockerInfo.dockerEnv.baseImage,
+                            buildCommand = dockerInfo.dockerEnv.buildCommand,
+                            runCommand = dockerInfo.dockerEnv.runCommand,
+                            port = dockerInfo.dockerEnv.port,
+                            additionalNotes = dockerInfo.dockerEnv.additionalNotes
+                        ),
+                        buildResult = DockerBuildResultDto(
+                            buildStatus = dockerInfo.buildResult.buildStatus,
+                            buildLogs = dockerInfo.buildResult.buildLogs,
+                            imageSize = dockerInfo.buildResult.imageSize,
+                            buildDurationSeconds = dockerInfo.buildResult.buildDurationSeconds,
+                            errorMessage = dockerInfo.buildResult.errorMessage
+                        ),
+                        dockerfileGenerated = dockerInfo.dockerfileGenerated
+                    )
+                }
+
                 GithubAnalysisResponse(
                     analysis = result.response,
                     tldr = result.shortSummary,
@@ -352,7 +384,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                         )
                     },
                     repositoryReview = repositoryReview,
-                    requirements = requirementsDto
+                    requirements = requirementsDto,
+                    dockerInfo = dockerInfoDto
                 )
             } catch (e: Exception) {
                 GithubAnalysisResponse(
@@ -362,7 +395,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     model = null,
                     usage = TokenUsageDto(0, 0, 0),
                     repositoryReview = null,
-                    requirements = null
+                    requirements = null,
+                    dockerInfo = null
                 )
             }
         }

@@ -15,18 +15,20 @@ import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
 import ru.andvl.chatter.koog.agents.utils.FIXING_MAX_CONTEXT_LENGTH
-import ru.andvl.chatter.koog.model.common.TokenUsage
+import ru.andvl.chatter.koog.model.docker.DockerEnvModel
 import ru.andvl.chatter.koog.model.tool.*
 
 private val originalRequestKey = createStorageKey<InitialPromptAnalysisModel.SuccessAnalysisModel>("original-request")
+internal val requirementsKey = createStorageKey<RequirementsAnalysisModel>("requirements")
 private val logger = LoggerFactory.getLogger("mcp")
 
 internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubAnalyze():
-        AIAgentSubgraphDelegate<InitialPromptAnalysisModel.SuccessAnalysisModel, ToolChatResponse> =
+        AIAgentSubgraphDelegate<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel> =
     subgraph("github-analysis") {
         val nodeGithubRequest by nodeGithubRequest()
         val nodeExecuteTool by nodeExecuteTool()
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
+
         val nodeProcessResult by nodeProcessResult()
 
         edge(nodeStart forwardTo nodeGithubRequest)
@@ -39,10 +41,11 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
 
     }
 
-private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeGithubRequest() =
+private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeGithubRequest() =
     node<InitialPromptAnalysisModel.SuccessAnalysisModel, Message.Response>("process-user-request") { request ->
         // Store original request for later use
         storage.set(originalRequestKey, request)
+        request.requirements?.let { storage.set(requirementsKey, it) }
 
         llm.writeSession {
             appendPrompt {
@@ -142,8 +145,8 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
         }
     }
 
-private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeProcessResult() =
-    node<String, ToolChatResponse>("process-llm-result") { rawAnalysisData ->
+private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeProcessResult() =
+    node<String, GithubRepositoryAnalysisModel.SuccessAnalysisModel>("process-llm-result") { rawAnalysisData ->
         val originalRequest = storage.get(originalRequestKey)
         llm.writeSession {
             appendPrompt {
@@ -187,9 +190,78 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                         """.trimIndent()
                 } ?: ""
 
+                val dockerDetectionSection = """
+
+                **DOCKER ENVIRONMENT ANALYSIS:**
+                Analyze if this project can be containerized with Docker:
+
+                1. Check for existing Docker configuration:
+                   - Dockerfile, docker-compose.yml, .dockerignore
+
+                2. Identify project type and technology:
+                   - Node.js: package.json with scripts
+                   - Python: requirements.txt, setup.py
+                   - Java: pom.xml (Maven), build.gradle (Gradle)
+                   - Android: app/build.gradle.kts, AndroidManifest.xml
+                   - Go: go.mod, main.go
+                   - Ruby: Gemfile
+                   - PHP: composer.json
+
+                3. If suitable for Docker, provide `docker_env`:
+
+                   **Node.js projects:**
+                   - base_image: "node:18-alpine" or "node:20-alpine"
+                   - build_command: "npm install" or "yarn install"
+                   - run_command: "npm start" or "node index.js"
+                   - port: 3000 (or from package.json)
+
+                   **Python projects:**
+                   - base_image: "python:3.9-slim" or "python:3.11-slim"
+                   - build_command: "pip install -r requirements.txt"
+                   - run_command: "python app.py" or "gunicorn app:app --bind 0.0.0.0:5000"
+                   - port: 5000 or 8000
+
+                   **Java/Maven projects:**
+                   - base_image: "maven:3.8-openjdk-11"
+                   - build_command: "mvn clean package"
+                   - run_command: "java -jar target/*.jar"
+                   - port: 8080
+
+                   **Java/Gradle projects:**
+                   - base_image: "gradle:7-jdk11"
+                   - build_command: "./gradlew build"
+                   - run_command: "java -jar build/libs/*.jar"
+                   - port: 8080
+
+                   **Android projects:**
+                   - base_image: "mingc/android-build-box:latest" or "gradle:7-jdk11" or any suitable for project
+                   - build_command: "./gradlew assembleDebug" or "./gradlew build"
+                   - run_command: "echo 'APK built successfully at app/build/outputs/apk/debug/app-debug.apk'"
+                   - port: null (mobile app, no server port)
+                   - additional_notes: "This is an Android mobile application. Docker is used for building APK, not running a server."
+
+                   **Go projects:**
+                   - base_image: "golang:1.21-alpine" or "golang:1.22-alpine"
+                   - build_command: "go mod download && go build -o app ."
+                   - run_command: "./app"
+                   - port: 8080 (or check main.go for actual port)
+
+                4. Set `docker_env` to **null** if:
+                   - Pure library/SDK (no runnable application)
+                   - CLI tool without server component
+                   - Requires specific hardware/OS features (e.g., iOS apps, desktop GUI apps)
+                   - No clear build/run commands
+                   - Simple Android UI app without any build verification requirements
+
+                **Important:**
+                - Be conservative - only suggest Docker if clearly applicable
+                - For Android apps: Suggest Docker if build verification or CI/CD is beneficial
+                - For Android apps: Set to null if it's a simple UI-only educational project
+                """.trimIndent()
+
                 val jsonExample = if (originalRequest?.requirements != null) {
                     """
-                    
+
                     **REQUIRED JSON OUTPUT STRUCTURE:**
                     ```json
                     {
@@ -226,52 +298,72 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                             "code_quote": "related code"
                           }
                         ]
+                      },
+                      "docker_env": {
+                        "base_image": "node:18-alpine",
+                        "build_command": "npm install",
+                        "run_command": "npm start",
+                        "port": 3000,
+                        "additional_notes": "Optional notes"
                       }
                     }
                     ```
+
+                    Set `docker_env` to null if Docker is not applicable.
                     """
                 } else {
                     """
-                    
+
                     **REQUIRED JSON OUTPUT STRUCTURE:**
                     ```json
                     {
                       "free_form_github_analysis": "Comprehensive analysis text with repository overview, technical details, etc.",
                       "tldr": "Brief summary of key findings",
-                      "repository_review": null
+                      "repository_review": null,
+                      "docker_env": {
+                        "base_image": "mingc/android-build-box:latest",
+                        "build_command": "./gradlew assembleDebug",
+                        "run_command": "echo 'APK built successfully at app/build/outputs/apk/debug/app-debug.apk'",
+                        "port": null,
+                        "additional_notes": "Android mobile application - Docker used for APK building"
+                      }
                     }
                     ```
+
+                    Set `docker_env` to null if Docker is not applicable (e.g., pure Android UI apps without backend).
                     """
                 }
 
                 system(
                     """
                                         You are an expert at synthesizing GitHub repository analysis results into structured JSON reports.
-                                        
+
                                         Your task: Process the raw analysis data and create a comprehensive response following the EXACT JSON structure provided.
-                                        
+
                                         **CRITICAL LANGUAGE REQUIREMENT:**
                                         - The entire response (free_form_github_analysis, tldr, and all comments) MUST be written in the SAME language as the original user request
                                         - If the original user request was in Russian, write the analysis in Russian
                                         - If the original user request was in English, write the analysis in English
                                         - Preserve technical terms but adapt the language style to match the original request
                                         - Maintain professional and technical tone in the target language
-                                        
+
                                         **CRITICAL REQUIREMENTS:**
                                         1. Output MUST be valid JSON matching the provided structure
-                                        2. Field names MUST match exactly: "free_form_github_analysis", "tldr", "repository_review"
+                                        2. Field names MUST match exactly: "free_form_github_analysis", "tldr", "repository_review", "docker_env"
                                         3. Use ONLY actual file references found in the analysis data - DO NOT invent file paths
                                         4. Comment types MUST be exactly: "PROBLEM", "ADVANTAGE", or "OK"
                                         5. If no requirements provided, set repository_review to null
                                         6. STRICTLY DO NOT USE MARKDOWN TAGS LIKE ```json TO WRAP CONTENT
-                                        
+
                                         ${requirementsSection}
+                                        ${dockerDetectionSection}
                                         ${jsonExample}
 
                                         **Content Guidelines:**
                                         - free_form_github_analysis: Comprehensive, structured analysis (include overview, architecture, dependencies, code quality, etc.)
                                         - tldr: Concise 1-2 sentence summary of key findings
                                         - repository_review: ONLY if requirements were provided, evaluate each requirement systematically
+                                        - docker_env: Analyze if project can be containerized, provide Docker configuration or null
                                         - Use professional, technical language in the same language as original request
                                         - Include specific details and examples where relevant
                                         - Base all file references on actual repository analysis - DO NOT fabricate
@@ -299,7 +391,6 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                     """.trimIndent()
                 )
             }
-            val totalToolCalls = storage.get(toolCallsKey).orEmpty()
 
             val response = requestLLMStructured<GithubRepositoryAnalysisModel>(
                 examples = listOf(
@@ -339,7 +430,14 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                     )
                                 )
                             )
-                        } else null
+                        } else null,
+                        dockerEnv = DockerEnvModel(
+                            baseImage = "mingc/android-build-box:latest or any suitable",
+                            buildCommand = "./gradlew assembleDebug",
+                            runCommand = "echo 'APK built successfully at app/build/outputs/apk/debug/app-debug.apk'",
+                            port = null,
+                            additionalNotes = "Android mobile application - Docker used for building APK"
+                        )
                     ),
                     GithubRepositoryAnalysisModel.FailedAnalysisModel("Request was failed because of ...")
                 ),
@@ -360,38 +458,15 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                 val resp = response.getOrThrow().also {
                     logger.info("Final response: $it")
                 }
-                ToolChatResponse(
-                    response = when (val structure = resp.structure) {
-                        is GithubRepositoryAnalysisModel.FailedAnalysisModel -> structure.reason
-                        is GithubRepositoryAnalysisModel.SuccessAnalysisModel -> structure.freeFormAnswer
-                    },
-                    shortSummary = when (val structure = resp.structure) {
-                        is GithubRepositoryAnalysisModel.FailedAnalysisModel -> "Request failed"
-                        is GithubRepositoryAnalysisModel.SuccessAnalysisModel -> structure.shortSummary
-                    },
-                    toolCalls = totalToolCalls,
-                    originalMessage = resp.message,
-                    tokenUsage = TokenUsage(
-                        promptTokens = resp.message.metaInfo.inputTokensCount ?: 0,
-                        completionTokens = resp.message.metaInfo.outputTokensCount ?: 0,
-                        totalTokens = resp.message.metaInfo.totalTokensCount ?: 0
-                    ),
-                    repositoryReview = when (val structure = resp.structure) {
-                        is GithubRepositoryAnalysisModel.FailedAnalysisModel -> null
-                        is GithubRepositoryAnalysisModel.SuccessAnalysisModel -> structure.repositoryReview
-                    },
-                    requirements = originalRequest?.requirements
-                )
+
+                when (val structure = resp.structure) {
+                    is GithubRepositoryAnalysisModel.FailedAnalysisModel -> {
+                        throw IllegalStateException("GitHub analysis failed: ${structure.reason}")
+                    }
+                    is GithubRepositoryAnalysisModel.SuccessAnalysisModel -> structure
+                }
             } else {
-                ToolChatResponse(
-                    response = "Request finished with error: ${response.exceptionOrNull()?.message}",
-                    shortSummary = "Request failed",
-                    toolCalls = totalToolCalls,
-                    originalMessage = null,
-                    tokenUsage = TokenUsage(0, 0, 0),
-                    repositoryReview = null,
-                    requirements = originalRequest?.requirements
-                )
+                throw IllegalStateException("Request finished with error: ${response.exceptionOrNull()?.message}")
             }
         }
     }

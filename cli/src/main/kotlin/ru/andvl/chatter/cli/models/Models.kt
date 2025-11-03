@@ -76,7 +76,9 @@ data class GithubAnalysisResponse(
     @SerialName("repository_review")
     val repositoryReview: RepositoryReviewDto? = null,
     @SerialName("requirements")
-    val requirements: RequirementsAnalysisDto? = null
+    val requirements: RequirementsAnalysisDto? = null,
+    @SerialName("docker_info")
+    val dockerInfo: DockerInfoDto? = null
 )
 
 /**
@@ -135,4 +137,51 @@ data class RepositoryReviewDto(
     val advantagesReview: List<RequirementReviewCommentDto>,
     @SerialName("attention_points_review")
     val attentionPointsReview: List<RequirementReviewCommentDto>
+)
+
+/**
+ * Docker environment DTO
+ */
+@Serializable
+data class DockerEnvDto(
+    @SerialName("base_image")
+    val baseImage: String,
+    @SerialName("build_command")
+    val buildCommand: String,
+    @SerialName("run_command")
+    val runCommand: String,
+    @SerialName("port")
+    val port: Int? = null,
+    @SerialName("additional_notes")
+    val additionalNotes: String? = null
+)
+
+/**
+ * Docker build result DTO
+ */
+@Serializable
+data class DockerBuildResultDto(
+    @SerialName("build_status")
+    val buildStatus: String,
+    @SerialName("build_logs")
+    val buildLogs: List<String> = emptyList(),
+    @SerialName("image_size")
+    val imageSize: String? = null,
+    @SerialName("build_duration_seconds")
+    val buildDurationSeconds: Int? = null,
+    @SerialName("error_message")
+    val errorMessage: String? = null
+)
+
+/**
+ * Docker info DTO
+ */
+@Serializable
+data class DockerInfoDto(
+    @SerialName("docker_env")
+    val dockerEnv: DockerEnvDto,
+    @SerialName("build_result")
+    val buildResult: DockerBuildResultDto,
+    @SerialName("dockerfile_generated")
+    val dockerfileGenerated: Boolean = false
 )
