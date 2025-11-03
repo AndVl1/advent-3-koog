@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.kotlin.plugin.serialization) apply false
     alias(libs.plugins.kotlinx.rpc.plugin) apply false
     alias(libs.plugins.shadow.jar) apply false
+    alias(libs.plugins.compose) apply false
+    alias(libs.plugins.compose.compiler) apply false
 }
 
 subprojects {
