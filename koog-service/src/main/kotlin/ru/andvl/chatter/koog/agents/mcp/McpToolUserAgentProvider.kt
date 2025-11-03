@@ -37,11 +37,13 @@ internal fun getToolAgentPrompt(
     }
 }
 
-internal fun getGithubAnalysisStrategy(): AIAgentGraphStrategy<GithubChatRequest, ToolChatResponse> =
+internal fun getGithubAnalysisStrategy(
+    fixingModel: ai.koog.prompt.llm.LLModel
+): AIAgentGraphStrategy<GithubChatRequest, ToolChatResponse> =
     strategy("github-analysis-agent") {
-        val initialRequestNode by subgraphGithubLLMRequest()
-        val githubAnalysisSubgraph by subgraphGithubAnalyze()
-        val dockerSubgraph by subgraphDocker()
+        val initialRequestNode by subgraphGithubLLMRequest(fixingModel)
+        val githubAnalysisSubgraph by subgraphGithubAnalyze(fixingModel)
+        val dockerSubgraph by subgraphDocker(fixingModel)
 
         edge(nodeStart forwardTo initialRequestNode)
         edge(initialRequestNode forwardTo githubAnalysisSubgraph)

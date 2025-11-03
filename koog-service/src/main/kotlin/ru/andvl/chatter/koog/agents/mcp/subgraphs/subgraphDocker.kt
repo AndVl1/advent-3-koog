@@ -12,7 +12,6 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
-import ru.andvl.chatter.koog.agents.utils.FixingModelHolder
 import ru.andvl.chatter.koog.model.docker.DockerBuildResult
 import ru.andvl.chatter.koog.model.docker.DockerInfoModel
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
@@ -22,13 +21,14 @@ import ru.andvl.chatter.koog.model.tool.ToolChatResponse
 private val dockerAnalysisKey = createStorageKey<GithubRepositoryAnalysisModel.SuccessAnalysisModel>("docker-analysis")
 private val logger = LoggerFactory.getLogger("docker-subgraph")
 
-internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphDocker():
-        AIAgentSubgraphDelegate<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse> =
+internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphDocker(
+    fixingModel: ai.koog.prompt.llm.LLModel
+): AIAgentSubgraphDelegate<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse> =
     subgraph("docker-build") {
         val nodeDockerRequest by nodeDockerRequest()
         val nodeExecuteTool by nodeExecuteTool()
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
-        val nodeProcessResult by nodeProcessResult()
+        val nodeProcessResult by nodeProcessResult(fixingModel)
 
         edge(nodeStart forwardTo nodeDockerRequest onCondition { it.dockerEnv != null })
         edge(nodeStart forwardTo nodeFinish onCondition {
@@ -131,6 +131,7 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
                             LLMCapability.Temperature,
                             LLMCapability.Completion,
                             LLMCapability.Tools,
+                            LLMCapability.OpenAIEndpoint.Completions
                         )
                     )
                 }
@@ -140,7 +141,9 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
         }
     }
 
-private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeProcessResult() =
+private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeProcessResult(
+    fixingModel: ai.koog.prompt.llm.LLModel
+) =
     node<String, ToolChatResponse>("process-docker-result") { rawDockerData ->
         val analysisResult = storage.get(dockerAnalysisKey)!!
         val requirements = storage.get(requirementsKey)
@@ -163,9 +166,9 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
         // Parse Docker build results from LLM response
         llm.writeSession {
             appendPrompt {
-                model = model.copy(
-                    id = "z-ai/glm-4.6"
-                )
+//                model = model.copy(
+//                    id = "z-ai/glm-4.6"
+//                )
 
                 system("""
                     You are an expert at parsing Docker build results and creating structured reports.
@@ -219,7 +222,7 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
                     )
                 ),
                 fixingParser = StructureFixingParser(
-                    fixingModel = FixingModelHolder.get(),
+                    fixingModel = fixingModel,
                     retries = 3
                 )
             )

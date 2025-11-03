@@ -8,13 +8,10 @@ import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.environment.ReceivedToolResult
 import ai.koog.agents.core.environment.executeTool
 import ai.koog.prompt.llm.LLMCapability
-import ai.koog.prompt.llm.LLMProvider
-import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
-import ru.andvl.chatter.koog.agents.utils.FIXING_MAX_CONTEXT_LENGTH
 import ru.andvl.chatter.koog.model.docker.DockerEnvModel
 import ru.andvl.chatter.koog.model.tool.*
 
@@ -22,14 +19,15 @@ private val originalRequestKey = createStorageKey<InitialPromptAnalysisModel.Suc
 internal val requirementsKey = createStorageKey<RequirementsAnalysisModel>("requirements")
 private val logger = LoggerFactory.getLogger("mcp")
 
-internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubAnalyze():
-        AIAgentSubgraphDelegate<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel> =
+internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubAnalyze(
+    fixingModel: ai.koog.prompt.llm.LLModel
+): AIAgentSubgraphDelegate<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel> =
     subgraph("github-analysis") {
         val nodeGithubRequest by nodeGithubRequest()
         val nodeExecuteTool by nodeExecuteTool()
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
 
-        val nodeProcessResult by nodeProcessResult()
+        val nodeProcessResult by nodeProcessResult(fixingModel)
 
         edge(nodeStart forwardTo nodeGithubRequest)
         edge(nodeGithubRequest forwardTo nodeExecuteTool onToolCall { true })
@@ -136,6 +134,7 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                         LLMCapability.Temperature,
                         LLMCapability.Completion,
                         LLMCapability.Tools,
+                        LLMCapability.OpenAIEndpoint.Completions
 //                        LLMCapability.ToolChoice,
                     )
                 )
@@ -145,14 +144,16 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
         }
     }
 
-private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeProcessResult() =
+private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeProcessResult(
+    fixingModel: ai.koog.prompt.llm.LLModel
+) =
     node<String, GithubRepositoryAnalysisModel.SuccessAnalysisModel>("process-llm-result") { rawAnalysisData ->
         val originalRequest = storage.get(originalRequestKey)
         llm.writeSession {
             appendPrompt {
-                model = model.copy(
-                    id = "z-ai/glm-4.6"
-                )
+//                model = model.copy(
+//                    id = "z-ai/glm-4.6"
+//                )
 
                 val requirementsSection = originalRequest?.requirements?.let { req ->
                     """
@@ -442,15 +443,7 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                     GithubRepositoryAnalysisModel.FailedAnalysisModel("Request was failed because of ...")
                 ),
                 fixingParser = StructureFixingParser(
-                    fixingModel = LLModel(
-                        provider = LLMProvider.OpenRouter,
-                        id = "z-ai/glm-4.6", // z-ai/glm-4.6 mistralai/mistral-7b-instruct google/gemma-3n-e4b-it
-                        capabilities = listOf(
-                            LLMCapability.Temperature,
-                            LLMCapability.Completion,
-                        ),
-                        contextLength = FIXING_MAX_CONTEXT_LENGTH,
-                    ),
+                    fixingModel = fixingModel,
                     retries = 3
                 )
             )

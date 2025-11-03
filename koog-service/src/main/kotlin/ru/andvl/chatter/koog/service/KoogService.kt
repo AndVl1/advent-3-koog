@@ -26,7 +26,6 @@ import ru.andvl.chatter.koog.agents.mcp.getGithubAnalysisStrategy
 import ru.andvl.chatter.koog.agents.mcp.getToolAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
-import ru.andvl.chatter.koog.agents.utils.FixingModelHolder
 import ru.andvl.chatter.koog.agents.utils.createFixingModel
 import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.common.TokenUsage
@@ -258,19 +257,20 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 "OPEN_ROUTER", "OPENROUTER" -> LLMProvider.OpenRouter
                 "OPENAI" -> LLMProvider.OpenAI
                 "ANTHROPIC" -> LLMProvider.Anthropic
-                "CUSTOM" -> LLMProvider.OpenRouter  // Use OpenRouter-compatible for custom providers
+                "CUSTOM" -> object : LLMProvider(llmConfig.baseUrl.toString(), llmConfig.provider) {}  // Use OpenRouter-compatible for custom providers
                 else -> LLMProvider.OpenRouter
             }
 
             val model = LLModel(
                 provider = llmProvider,
                 id = llmConfig.model,
-                capabilities = listOf(
+                capabilities = listOfNotNull(
                     LLMCapability.Temperature,
                     LLMCapability.Completion,
                     LLMCapability.Tools,
+                    LLMCapability.OpenAIEndpoint.Completions
                 ),
-                contextLength = 128_000,
+                contextLength = 100_000,
             )
 
             val systemPrompt = buildGithubSystemPrompt()
@@ -292,7 +292,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 modelId = llmConfig.fixingModel ?: llmConfig.model
             )
 
-            val strategy = getGithubAnalysisStrategy()
+            val strategy = getGithubAnalysisStrategy(fixingModel)
 
             val agent = AIAgent(
                 promptExecutor = promptExecutor,
@@ -307,13 +307,10 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                         addMessageProcessor(TraceFeatureMessageFileWriter(
                             outputPath,
                             { path: Path -> SystemFileSystem.sink(path).buffered() }
-                        ) { it.toString().take(200) })
+                        ))
                     }
                 }
             )
-
-            // Set fixing model in thread-local holder for subgraphs to use
-            FixingModelHolder.set(fixingModel)
 
             val githubRequest = GithubChatRequest(
                 message = request.userMessage,
@@ -323,8 +320,6 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
 
             try {
                 val result = agent.run(githubRequest)
-                // Clean up thread-local after execution
-                FixingModelHolder.clear()
 
                 // Map repository review if available
                 val repositoryReview = result.repositoryReview?.let { reviewModel ->

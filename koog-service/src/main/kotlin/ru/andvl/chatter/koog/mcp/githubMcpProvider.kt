@@ -14,7 +14,34 @@ import kotlin.system.exitProcess
 
 object McpProvider {
 
+    private var googleDocsClient: Client? = null
+    private val googleDocsMutex = Mutex()
+
     suspend fun getGoogleDocsClient(): Client {
+        return googleDocsClient ?: googleDocsMutex.withLock {
+            googleDocsClient ?: createGoogleDocsClient().also {
+                googleDocsClient = it
+            }
+        }
+    }
+
+    //////////////////////////////////
+
+    private var githubClient: Client? = null
+    private val githubMutex = Mutex()
+
+    suspend fun getGithubClient(): Client {
+        return githubClient ?: githubMutex.withLock {
+            if (githubClient != null) {
+                githubClient!!
+            } else {
+                createGithubClient()
+                    .also { githubClient = it }
+            }
+        }
+    }
+
+    private suspend fun createGoogleDocsClient(): Client {
         val jarPath = "mcp/googledocs/build/libs/googledocs-0.1.0.jar"
         val jarFile = File(jarPath)
         if (!jarFile.exists()) {
@@ -77,20 +104,6 @@ object McpProvider {
         }
 
         return client
-    }
-
-    private var githubClient: Client? = null
-    private val githubMutex = Mutex()
-
-    suspend fun getGithubClient(): Client {
-        return githubClient ?: githubMutex.withLock {
-            if (githubClient != null) {
-                githubClient!!
-            } else {
-                createGithubClient()
-                    .also { githubClient = it }
-            }
-        }
     }
 
     private suspend fun createGithubClient(): Client {

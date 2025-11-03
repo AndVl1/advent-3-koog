@@ -12,7 +12,6 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
-import ru.andvl.chatter.koog.agents.utils.FixingModelHolder
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
 import ru.andvl.chatter.koog.model.tool.InitialPromptAnalysisModel
 import ru.andvl.chatter.koog.model.tool.RequirementsAnalysisModel
@@ -22,12 +21,13 @@ private val initialAnalysisKey = createStorageKey<InitialPromptAnalysisModel>("i
 
 private val logger = LoggerFactory.getLogger("mcp")
 
-internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubLLMRequest():
-        AIAgentSubgraphDelegate<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel> =
+internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubLLMRequest(
+    fixingModel: ai.koog.prompt.llm.LLModel
+): AIAgentSubgraphDelegate<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel> =
     subgraph<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>("initial-analysis") {
-        val nodeInitialAnalysis by nodeInitialAnalysis()
+        val nodeInitialAnalysis by nodeInitialAnalysis(fixingModel)
         val nodeRequirementsCollection by nodeRequirementsCollection()
-        val nodeProcessFinalRequirements by nodeProcessFinalRequirements()
+        val nodeProcessFinalRequirements by nodeProcessFinalRequirements(fixingModel)
         val nodeExecuteTool by nodeExecuteTool()
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
 
@@ -42,7 +42,9 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
     }
 
 // Node 1: Initial analysis of user request to extract GitHub URL and basic requirements
-private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeInitialAnalysis() =
+private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeInitialAnalysis(
+    fixingModel: ai.koog.prompt.llm.LLModel
+) =
     node<GithubChatRequest, InitialPromptAnalysisModel>("initial-analysis") { request ->
         llm.writeSession {
             appendPrompt {
@@ -87,6 +89,7 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                     capabilities = listOf(
                         LLMCapability.Temperature,
                         LLMCapability.Completion,
+                        LLMCapability.OpenAIEndpoint.Completions
                     )
                 )
             }
@@ -115,7 +118,7 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                     )
                 ),
                 fixingParser = StructureFixingParser(
-                    fixingModel = FixingModelHolder.get(),
+                    fixingModel = fixingModel,
                     retries = 3
                 )
             )
@@ -151,6 +154,7 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                                     LLMCapability.Temperature,
                                     LLMCapability.Completion,
                                     LLMCapability.Tools,
+                                    LLMCapability.OpenAIEndpoint.Completions
 //                                    LLMCapability.ToolChoice,
                                 )
                             )
@@ -201,7 +205,9 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
     }
 
 // Node 4: Process final requirements and return complete analysis
-private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeProcessFinalRequirements() =
+private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeProcessFinalRequirements(
+    fixingModel: ai.koog.prompt.llm.LLModel
+) =
     node<String, InitialPromptAnalysisModel.SuccessAnalysisModel>("process-final-requirements") { rawRequirementsData ->
         val initialAnalysis = storage.get(initialAnalysisKey) as InitialPromptAnalysisModel.SuccessAnalysisModel
 
@@ -254,9 +260,9 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                         )
                     ),
                     fixingParser = StructureFixingParser(
-                    fixingModel = FixingModelHolder.get(),
-                    retries = 3
-                )
+                        fixingModel = fixingModel,
+                        retries = 3
+                    )
                 )
 
                 response.getOrThrow().structure

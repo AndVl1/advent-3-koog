@@ -108,7 +108,11 @@ class GithubAnalysisViewModel(
                 } else null,
                 useMainModelForFixing = currentState.useMainModelForFixing,
                 fixingModel = if (currentState.useMainModelForFixing) {
-                    currentState.selectedModel
+                    if (currentState.llmProvider == LLMProvider.CUSTOM) {
+                        currentState.customModel
+                    } else {
+                        currentState.selectedModel
+                    }
                 } else {
                     currentState.fixingModel
                 }
