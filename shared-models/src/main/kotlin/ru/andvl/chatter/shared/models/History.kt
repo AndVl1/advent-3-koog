@@ -1,5 +1,6 @@
 package ru.andvl.chatter.shared.models
 
+import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
 
@@ -32,19 +33,19 @@ data class ConversationState(
     val history: List<SharedMessage> = emptyList(),
     val activeChecklist: List<SharedCheckListItem> = emptyList(),
     val conversationId: String? = null,
-    val lastUpdated: Instant = kotlinx.datetime.Clock.System.now()
+    val lastUpdated: Instant = Clock.System.now()
 ) {
     fun addMessage(message: SharedMessage): ConversationState {
         return copy(
             history = history + message,
-            lastUpdated = kotlinx.datetime.Clock.System.now()
+            lastUpdated = Clock.System.now()
         )
     }
 
     fun updateChecklist(newChecklist: List<SharedCheckListItem>): ConversationState {
         return copy(
             activeChecklist = newChecklist,
-            lastUpdated = kotlinx.datetime.Clock.System.now()
+            lastUpdated = Clock.System.now()
         )
     }
 

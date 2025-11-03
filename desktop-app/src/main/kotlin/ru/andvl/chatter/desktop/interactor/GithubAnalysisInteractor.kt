@@ -32,21 +32,22 @@ class GithubAnalysisInteractor(
      */
     private fun validateConfig(config: AnalysisConfig): String? {
         return when {
-            config.githubUrl.isBlank() -> "GitHub URL cannot be empty"
-            !isValidGithubUrl(config.githubUrl) -> "Invalid GitHub URL format. Expected: github.com/owner/repo"
-            config.apiKey.isBlank() -> "API Key is required"
+            config.userInput.isBlank() ->
+                "Input cannot be empty. Provide GitHub repository URL and task description."
+
+            config.apiKey.isBlank() ->
+                "API Key is required. Please enter your ${config.llmProvider.displayName} API key to proceed."
+
+            config.selectedModel.isBlank() ->
+                "Model selection is required"
+
+            config.llmProvider.requiresCustomUrl && config.customBaseUrl.isNullOrBlank() ->
+                "Base URL is required for custom provider"
+
+            config.llmProvider.requiresCustomUrl && config.customModel.isNullOrBlank() ->
+                "Model name is required for custom provider"
+
             else -> null
         }
-    }
-
-    /**
-     * Check if URL is a valid GitHub repository URL
-     */
-    private fun isValidGithubUrl(url: String): Boolean {
-        val githubPattern = Regex(
-            """^(https?://)?(www\.)?github\.com/[\w.-]+/[\w.-]+/?$""",
-            RegexOption.IGNORE_CASE
-        )
-        return githubPattern.matches(url) || url.matches(Regex("""^[\w.-]+/[\w.-]+$"""))
     }
 }

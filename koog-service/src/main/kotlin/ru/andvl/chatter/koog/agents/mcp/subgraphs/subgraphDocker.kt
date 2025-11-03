@@ -8,15 +8,16 @@ import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.environment.ReceivedToolResult
 import ai.koog.agents.core.environment.executeTool
 import ai.koog.prompt.llm.LLMCapability
-import ai.koog.prompt.llm.LLMProvider
-import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
-import ru.andvl.chatter.koog.agents.utils.FIXING_MAX_CONTEXT_LENGTH
-import ru.andvl.chatter.koog.model.docker.*
-import ru.andvl.chatter.koog.model.tool.*
+import ru.andvl.chatter.koog.agents.utils.FixingModelHolder
+import ru.andvl.chatter.koog.model.docker.DockerBuildResult
+import ru.andvl.chatter.koog.model.docker.DockerInfoModel
+import ru.andvl.chatter.koog.model.tool.GithubChatRequest
+import ru.andvl.chatter.koog.model.tool.GithubRepositoryAnalysisModel
+import ru.andvl.chatter.koog.model.tool.ToolChatResponse
 
 private val dockerAnalysisKey = createStorageKey<GithubRepositoryAnalysisModel.SuccessAnalysisModel>("docker-analysis")
 private val logger = LoggerFactory.getLogger("docker-subgraph")
@@ -218,15 +219,7 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
                     )
                 ),
                 fixingParser = StructureFixingParser(
-                    fixingModel = LLModel(
-                        provider = LLMProvider.OpenRouter,
-                        id = "z-ai/glm-4.6",
-                        capabilities = listOf(
-                            LLMCapability.Temperature,
-                            LLMCapability.Completion,
-                        ),
-                        contextLength = FIXING_MAX_CONTEXT_LENGTH,
-                    ),
+                    fixingModel = FixingModelHolder.get(),
                     retries = 3
                 )
             )

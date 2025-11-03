@@ -5,14 +5,9 @@ package ru.andvl.chatter.desktop.models
  */
 sealed interface GithubAnalysisAction {
     /**
-     * User changed GitHub URL input
+     * User changed input text (combined github URL + request)
      */
-    data class UpdateGithubUrl(val url: String) : GithubAnalysisAction
-
-    /**
-     * User changed request text
-     */
-    data class UpdateUserRequest(val request: String) : GithubAnalysisAction
+    data class UpdateUserInput(val input: String) : GithubAnalysisAction
 
     /**
      * User changed API key
@@ -23,6 +18,31 @@ sealed interface GithubAnalysisAction {
      * User selected LLM provider
      */
     data class SelectLLMProvider(val provider: LLMProvider) : GithubAnalysisAction
+
+    /**
+     * User selected a model from dropdown
+     */
+    data class SelectModel(val model: String) : GithubAnalysisAction
+
+    /**
+     * User changed custom base URL (for Custom provider)
+     */
+    data class UpdateCustomBaseUrl(val url: String) : GithubAnalysisAction
+
+    /**
+     * User changed custom model name (for Custom provider)
+     */
+    data class UpdateCustomModel(val model: String) : GithubAnalysisAction
+
+    /**
+     * Toggle between using main model or separate model for fixing
+     */
+    data class ToggleUseMainModelForFixing(val useMain: Boolean) : GithubAnalysisAction
+
+    /**
+     * User selected a fixing model from dropdown
+     */
+    data class SelectFixingModel(val model: String) : GithubAnalysisAction
 
     /**
      * User clicked "Analyze" button

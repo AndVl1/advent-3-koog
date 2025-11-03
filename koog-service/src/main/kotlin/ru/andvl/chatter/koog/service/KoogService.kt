@@ -26,6 +26,8 @@ import ru.andvl.chatter.koog.agents.mcp.getGithubAnalysisStrategy
 import ru.andvl.chatter.koog.agents.mcp.getToolAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
+import ru.andvl.chatter.koog.agents.utils.FixingModelHolder
+import ru.andvl.chatter.koog.agents.utils.createFixingModel
 import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.common.TokenUsage
 import ru.andvl.chatter.koog.model.structured.ChatRequest
@@ -240,6 +242,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
     suspend fun analyseGithub(
         promptExecutor: PromptExecutor,
         request: GithubAnalysisRequest,
+        llmConfig: LLMConfig,
     ): GithubAnalysisResponse {
         return withContext(Dispatchers.IO) {
             val githubMcpClient = McpProvider.getGithubClient()
@@ -250,10 +253,18 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     tools(CurrentTimeToolSet())
                     tools(DockerToolSet())
                 })
-            val strategy = getGithubAnalysisStrategy()
+            //  Map provider string to LLMProvider enum
+            val llmProvider = when (llmConfig.provider.uppercase()) {
+                "OPEN_ROUTER", "OPENROUTER" -> LLMProvider.OpenRouter
+                "OPENAI" -> LLMProvider.OpenAI
+                "ANTHROPIC" -> LLMProvider.Anthropic
+                "CUSTOM" -> LLMProvider.OpenRouter  // Use OpenRouter-compatible for custom providers
+                else -> LLMProvider.OpenRouter
+            }
+
             val model = LLModel(
-                provider = LLMProvider.OpenRouter,
-                id = "z-ai/glm-4.6",
+                provider = llmProvider,
+                id = llmConfig.model,
                 capabilities = listOf(
                     LLMCapability.Temperature,
                     LLMCapability.Completion,
@@ -275,6 +286,14 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 maxAgentIterations = 200,
             )
 
+            // Create fixing model for error correction
+            val fixingModel = createFixingModel(
+                provider = llmConfig.provider,
+                modelId = llmConfig.fixingModel ?: llmConfig.model
+            )
+
+            val strategy = getGithubAnalysisStrategy()
+
             val agent = AIAgent(
                 promptExecutor = promptExecutor,
                 agentConfig = agentConfig,
@@ -293,6 +312,9 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 }
             )
 
+            // Set fixing model in thread-local holder for subgraphs to use
+            FixingModelHolder.set(fixingModel)
+
             val githubRequest = GithubChatRequest(
                 message = request.userMessage,
                 systemPrompt = systemPrompt,
@@ -301,6 +323,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
 
             try {
                 val result = agent.run(githubRequest)
+                // Clean up thread-local after execution
+                FixingModelHolder.clear()
 
                 // Map repository review if available
                 val repositoryReview = result.repositoryReview?.let { reviewModel ->

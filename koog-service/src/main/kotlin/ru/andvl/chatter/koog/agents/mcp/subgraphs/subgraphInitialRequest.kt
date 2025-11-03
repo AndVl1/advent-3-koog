@@ -8,13 +8,11 @@ import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.environment.ReceivedToolResult
 import ai.koog.agents.core.environment.executeTool
 import ai.koog.prompt.llm.LLMCapability
-import ai.koog.prompt.llm.LLMProvider
-import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
-import ru.andvl.chatter.koog.agents.utils.FIXING_MAX_CONTEXT_LENGTH
+import ru.andvl.chatter.koog.agents.utils.FixingModelHolder
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
 import ru.andvl.chatter.koog.model.tool.InitialPromptAnalysisModel
 import ru.andvl.chatter.koog.model.tool.RequirementsAnalysisModel
@@ -117,15 +115,7 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                     )
                 ),
                 fixingParser = StructureFixingParser(
-                    fixingModel = LLModel(
-                        provider = LLMProvider.OpenRouter,
-                        id = "z-ai/glm-4.6",
-                        capabilities = listOf(
-                            LLMCapability.Temperature,
-                            LLMCapability.Completion,
-                        ),
-                        contextLength = FIXING_MAX_CONTEXT_LENGTH,
-                    ),
+                    fixingModel = FixingModelHolder.get(),
                     retries = 3
                 )
             )
@@ -154,6 +144,18 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                 if (initialAnalysis.googleDocsUrl != null && initialAnalysis.requirements == null) {
                     // Need to read requirements from Google Docs
                     llm.writeSession {
+                        changeModel(
+                            newModel = model.copy(
+//                                id = "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
+                                capabilities = listOf(
+                                    LLMCapability.Temperature,
+                                    LLMCapability.Completion,
+                                    LLMCapability.Tools,
+//                                    LLMCapability.ToolChoice,
+                                )
+                            )
+                        )
+
                         appendPrompt {
                             system("""
                                 You are an expert at extracting structured requirements from Google Docs documents.
@@ -179,17 +181,6 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                             """.trimIndent())
 
                             user("Please read the Google Docs document at ${initialAnalysis.googleDocsUrl} and extract structured requirements for analyzing GitHub repository")
-
-                            model = model.copy(
-//                                id = "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
-                                capabilities = listOf(
-                                    LLMCapability.Temperature,
-                                    LLMCapability.Completion,
-                                    LLMCapability.Tools,
-                                    LLMCapability.OpenAIEndpoint.Completions
-//                                    LLMCapability.ToolChoice,
-                                )
-                            )
                         }
 
                         // This will trigger tool calls to read Google Docs
@@ -263,17 +254,9 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                         )
                     ),
                     fixingParser = StructureFixingParser(
-                        fixingModel = LLModel(
-                            provider = LLMProvider.OpenRouter,
-                            id = "z-ai/glm-4.6",
-                            capabilities = listOf(
-                                LLMCapability.Temperature,
-                                LLMCapability.Completion,
-                            ),
-                            contextLength = FIXING_MAX_CONTEXT_LENGTH,
-                        ),
-                        retries = 3
-                    )
+                    fixingModel = FixingModelHolder.get(),
+                    retries = 3
+                )
                 )
 
                 response.getOrThrow().structure

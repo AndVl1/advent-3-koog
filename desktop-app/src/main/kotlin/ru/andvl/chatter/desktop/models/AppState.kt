@@ -6,10 +6,15 @@ import ru.andvl.chatter.shared.models.github.GithubAnalysisResponse
  * Application UI state
  */
 data class AppState(
-    val githubUrl: String = "",
-    val userRequest: String = "",
+    val userInput: String = "",
     val apiKey: String = "",
     val llmProvider: LLMProvider = LLMProvider.OPEN_ROUTER,
+    val selectedModel: String = LLMProvider.OPEN_ROUTER.defaultModel,
+    val customBaseUrl: String = "",
+    val customModel: String = "",
+    // Fixing model configuration (для исправления ошибок парсинга)
+    val useMainModelForFixing: Boolean = true,
+    val fixingModel: String = LLMProvider.OPEN_ROUTER.defaultModel,
     val isLoading: Boolean = false,
     val analysisResult: GithubAnalysisResponse? = null,
     val error: String? = null
@@ -18,10 +23,41 @@ data class AppState(
 /**
  * LLM Provider selection
  */
-enum class LLMProvider(val displayName: String, val defaultModel: String) {
-    OPEN_ROUTER("OpenRouter", "z-ai/glm-4.6"),
-    OPENAI("OpenAI", "gpt-4"),
-    ANTHROPIC("Anthropic", "claude-3-sonnet-20240229");
+enum class LLMProvider(
+    val displayName: String,
+    val defaultModel: String,
+    val availableModels: List<String>,
+    val requiresCustomUrl: Boolean = false
+) {
+    OPEN_ROUTER(
+        "OpenRouter",
+        "z-ai/glm-4.6",
+        listOf(
+            "z-ai/glm-4.6",
+            "qwen/qwen3-coder",
+            "z-ai/glm-4.5-air",
+        )
+    ),
+    OPENAI(
+        "OpenAI",
+        "gpt-4",
+        listOf("gpt-4", "gpt-4-turbo", "gpt-3.5-turbo")
+    ),
+    ANTHROPIC(
+        "Anthropic",
+        "claude-3-5-sonnet-20241022",
+        listOf(
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229"
+        )
+    ),
+    CUSTOM(
+        "Custom",
+        "",
+        emptyList(),
+        requiresCustomUrl = true
+    );
 
     companion object {
         fun fromDisplayName(name: String): LLMProvider =
@@ -33,8 +69,12 @@ enum class LLMProvider(val displayName: String, val defaultModel: String) {
  * Analysis request configuration
  */
 data class AnalysisConfig(
-    val githubUrl: String,
-    val userRequest: String,
+    val userInput: String,
     val apiKey: String,
-    val llmProvider: LLMProvider
+    val llmProvider: LLMProvider,
+    val selectedModel: String,
+    val customBaseUrl: String? = null,
+    val customModel: String? = null,
+    val useMainModelForFixing: Boolean = true,
+    val fixingModel: String
 )

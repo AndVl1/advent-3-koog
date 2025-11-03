@@ -4,6 +4,8 @@ import io.modelcontextprotocol.kotlin.sdk.Implementation
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.io.asSink
 import kotlinx.io.asSource
 import kotlinx.io.buffered
@@ -77,7 +79,21 @@ object McpProvider {
         return client
     }
 
+    private var githubClient: Client? = null
+    private val githubMutex = Mutex()
+
     suspend fun getGithubClient(): Client {
+        return githubClient ?: githubMutex.withLock {
+            if (githubClient != null) {
+                githubClient!!
+            } else {
+                createGithubClient()
+                    .also { githubClient = it }
+            }
+        }
+    }
+
+    private suspend fun createGithubClient(): Client {
         val jarPath = "mcp/github/build/libs/github-0.1.0.jar"
 
         // Проверяем существование JAR файла

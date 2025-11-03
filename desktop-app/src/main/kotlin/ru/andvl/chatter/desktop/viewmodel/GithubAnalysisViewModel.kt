@@ -29,22 +29,22 @@ class GithubAnalysisViewModel(
      */
     fun dispatch(action: GithubAnalysisAction) {
         when (action) {
-            is GithubAnalysisAction.UpdateGithubUrl -> handleUpdateGithubUrl(action.url)
-            is GithubAnalysisAction.UpdateUserRequest -> handleUpdateUserRequest(action.request)
+            is GithubAnalysisAction.UpdateUserInput -> handleUpdateUserInput(action.input)
             is GithubAnalysisAction.UpdateApiKey -> handleUpdateApiKey(action.apiKey)
             is GithubAnalysisAction.SelectLLMProvider -> handleSelectLLMProvider(action.provider)
+            is GithubAnalysisAction.SelectModel -> handleSelectModel(action.model)
+            is GithubAnalysisAction.UpdateCustomBaseUrl -> handleUpdateCustomBaseUrl(action.url)
+            is GithubAnalysisAction.UpdateCustomModel -> handleUpdateCustomModel(action.model)
+            is GithubAnalysisAction.ToggleUseMainModelForFixing -> handleToggleUseMainModelForFixing(action.useMain)
+            is GithubAnalysisAction.SelectFixingModel -> handleSelectFixingModel(action.model)
             is GithubAnalysisAction.StartAnalysis -> handleStartAnalysis()
             is GithubAnalysisAction.ClearError -> handleClearError()
             is GithubAnalysisAction.ClearResult -> handleClearResult()
         }
     }
 
-    private fun handleUpdateGithubUrl(url: String) {
-        _state.update { it.copy(githubUrl = url) }
-    }
-
-    private fun handleUpdateUserRequest(request: String) {
-        _state.update { it.copy(userRequest = request) }
+    private fun handleUpdateUserInput(input: String) {
+        _state.update { it.copy(userInput = input) }
     }
 
     private fun handleUpdateApiKey(apiKey: String) {
@@ -52,7 +52,32 @@ class GithubAnalysisViewModel(
     }
 
     private fun handleSelectLLMProvider(provider: LLMProvider) {
-        _state.update { it.copy(llmProvider = provider) }
+        _state.update {
+            it.copy(
+                llmProvider = provider,
+                selectedModel = provider.defaultModel
+            )
+        }
+    }
+
+    private fun handleSelectModel(model: String) {
+        _state.update { it.copy(selectedModel = model) }
+    }
+
+    private fun handleUpdateCustomBaseUrl(url: String) {
+        _state.update { it.copy(customBaseUrl = url) }
+    }
+
+    private fun handleUpdateCustomModel(model: String) {
+        _state.update { it.copy(customModel = model) }
+    }
+
+    private fun handleToggleUseMainModelForFixing(useMain: Boolean) {
+        _state.update { it.copy(useMainModelForFixing = useMain) }
+    }
+
+    private fun handleSelectFixingModel(model: String) {
+        _state.update { it.copy(fixingModel = model) }
     }
 
     private fun handleStartAnalysis() {
@@ -65,24 +90,41 @@ class GithubAnalysisViewModel(
                 )
             }
 
+            val currentState = _state.value
             val config = AnalysisConfig(
-                githubUrl = _state.value.githubUrl,
-                userRequest = _state.value.userRequest,
-                apiKey = _state.value.apiKey,
-                llmProvider = _state.value.llmProvider
+                userInput = currentState.userInput,
+                apiKey = currentState.apiKey,
+                llmProvider = currentState.llmProvider,
+                selectedModel = if (currentState.llmProvider == LLMProvider.CUSTOM) {
+                    currentState.customModel
+                } else {
+                    currentState.selectedModel
+                },
+                customBaseUrl = if (currentState.llmProvider == LLMProvider.CUSTOM) {
+                    currentState.customBaseUrl
+                } else null,
+                customModel = if (currentState.llmProvider == LLMProvider.CUSTOM) {
+                    currentState.customModel
+                } else null,
+                useMainModelForFixing = currentState.useMainModelForFixing,
+                fixingModel = if (currentState.useMainModelForFixing) {
+                    currentState.selectedModel
+                } else {
+                    currentState.fixingModel
+                }
             )
 
             val result = interactor.analyzeRepository(config)
 
-            _state.update { currentState ->
+            _state.update { state ->
                 if (result.isSuccess) {
-                    currentState.copy(
+                    state.copy(
                         isLoading = false,
                         analysisResult = result.getOrNull(),
                         error = null
                     )
                 } else {
-                    currentState.copy(
+                    state.copy(
                         isLoading = false,
                         analysisResult = null,
                         error = result.exceptionOrNull()?.message ?: "Unknown error occurred"
