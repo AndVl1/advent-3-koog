@@ -2,6 +2,7 @@ package ru.andvl.chatter.koog.agents.mcp.subgraphs
 
 import ai.koog.agents.core.agent.entity.createStorageKey
 import ai.koog.agents.core.dsl.builder.*
+import ai.koog.agents.core.dsl.extension.nodeLLMCompressHistory
 import ai.koog.agents.core.dsl.extension.nodeLLMSendToolResult
 import ai.koog.agents.core.dsl.extension.onAssistantMessage
 import ai.koog.agents.core.dsl.extension.onToolCall
@@ -12,6 +13,8 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
+import ru.andvl.chatter.koog.agents.utils.FixedWholeHistoryCompressionStrategy
+import ru.andvl.chatter.koog.agents.utils.isHistoryTooLong
 import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.docker.DockerEnvModel
 import ru.andvl.chatter.koog.model.tool.*
@@ -33,14 +36,22 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
 //        )
     ) {
         val nodeGithubRequest by nodeGithubRequest()
-        val nodeExecuteTool by nodeExecuteTool()
-        val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
+        val nodeExecuteTool by nodeExecuteTool("github-execute-tool")
+        val nodeSendToolResult by nodeLLMSendToolResult("github-subgraph-send-tool")
+        val nodeCompressHistory by nodeLLMCompressHistory<ReceivedToolResult>(
+            name = "github-compress-history",
+            strategy = FixedWholeHistoryCompressionStrategy()
+        )
         val nodeProcessResult by nodeProcessResult(fixingModel)
 
         edge(nodeStart forwardTo nodeGithubRequest)
         edge(nodeGithubRequest forwardTo nodeExecuteTool onToolCall { true })
         edge(nodeGithubRequest forwardTo nodeProcessResult onAssistantMessage { true })
-        edge(nodeExecuteTool forwardTo nodeSendToolResult)
+
+        edge(nodeExecuteTool forwardTo nodeCompressHistory onCondition { isHistoryTooLong() })
+        edge(nodeCompressHistory forwardTo nodeSendToolResult)
+
+        edge(nodeExecuteTool forwardTo nodeSendToolResult onCondition { !isHistoryTooLong() })
         edge(nodeSendToolResult forwardTo nodeExecuteTool onToolCall { true })
         edge(nodeSendToolResult forwardTo nodeProcessResult onAssistantMessage { true })
         edge(nodeProcessResult forwardTo nodeFinish)
@@ -48,7 +59,7 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
     }
 
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeGithubRequest() =
-    node<InitialPromptAnalysisModel.SuccessAnalysisModel, Message.Response>("process-user-request") { request ->
+    node<InitialPromptAnalysisModel.SuccessAnalysisModel, Message.Response>("github-process-user-request") { request ->
         // Store original request for later use
         storage.set(originalRequestKey, request)
         request.requirements?.let { storage.set(requirementsKey, it) }
@@ -155,7 +166,7 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeProcessResult(
     fixingModel: ai.koog.prompt.llm.LLModel
 ) =
-    node<String, GithubRepositoryAnalysisModel.SuccessAnalysisModel>("process-llm-result") { rawAnalysisData ->
+    node<String, GithubRepositoryAnalysisModel.SuccessAnalysisModel>("github-process-llm-result") { rawAnalysisData ->
         val originalRequest = storage.get(originalRequestKey)
         llm.writeSession {
             changeLLMParams(
