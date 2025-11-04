@@ -1,6 +1,7 @@
 package ru.andvl.chatter.backend
 
 import ai.koog.ktor.Koog
+import ai.koog.ktor.llm
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -79,7 +80,7 @@ fun Application.configureFrameworks() {
 
                     // Use KoogService from koog-service module (pure AiAgents, no RoutingContext)
                     val koogService = KoogServiceFactory.createFromEnv()
-                    val response = koogService.chat(userInput, this)
+                    val response = koogService.chat(userInput, llm())
 
                     log.info("AI response generated successfully: $response")
                     call.respond(response)
@@ -123,7 +124,7 @@ fun Application.configureFrameworks() {
                             "openrouter" -> Provider.OPENROUTER
                             else -> Provider.OPENROUTER
                         }
-                        koogService.chat(chatRequest, this, provider)
+                        koogService.chat(chatRequest, llm(), provider)
                     }
 
                     log.info("AI response with context generated successfully")
@@ -153,7 +154,17 @@ fun Application.configureFrameworks() {
                     log.info("Received GitHub analysis request: ${request.userMessage.take(100)}...")
 
                     val koogService = KoogServiceFactory.createFromEnv()
-                    val response = koogService.analyseGithub(this, request)
+
+                    // Default LLM configuration for server
+                    val defaultLLMConfig = ru.andvl.chatter.shared.models.github.LLMConfig(
+                        provider = "OPEN_ROUTER",
+                        model = "z-ai/glm-4.6",
+                        apiKey = null,  // Will use env variable
+                        baseUrl = null,  // Use default
+                        fixingModel = "z-ai/glm-4.6"  // Same as main model by default
+                    )
+
+                    val response = koogService.analyseGithub(this.llm(), request, defaultLLMConfig)
 
                     val githubResponse = GithubAnalysisResponse(
                         analysis = response.analysis,

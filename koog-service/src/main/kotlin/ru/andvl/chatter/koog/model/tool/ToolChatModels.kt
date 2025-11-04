@@ -19,5 +19,6 @@ internal class ToolChatResponse(
     val tokenUsage: TokenUsage?,
     val repositoryReview: RepositoryReviewModel? = null,
     val requirements: RequirementsAnalysisModel? = null,
+    val userRequestAnalysis: String? = null,
     val dockerInfo: DockerInfoModel? = null,
 )

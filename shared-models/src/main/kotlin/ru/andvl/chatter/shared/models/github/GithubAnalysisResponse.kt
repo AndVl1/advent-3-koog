@@ -55,6 +55,8 @@ data class GithubAnalysisResponse(
     val repositoryReview: RepositoryReviewDto? = null,
     @SerialName("requirements")
     val requirements: RequirementsAnalysisDto? = null,
+    @SerialName("user_request_analysis")
+    val userRequestAnalysis: String? = null,
     @SerialName("docker_info")
     val dockerInfo: DockerInfoDto? = null
 )

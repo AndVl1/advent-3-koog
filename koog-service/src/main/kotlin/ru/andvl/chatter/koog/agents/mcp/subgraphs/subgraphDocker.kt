@@ -8,26 +8,30 @@ import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.environment.ReceivedToolResult
 import ai.koog.agents.core.environment.executeTool
 import ai.koog.prompt.llm.LLMCapability
-import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
-import ru.andvl.chatter.koog.agents.utils.FIXING_MAX_CONTEXT_LENGTH
-import ru.andvl.chatter.koog.model.docker.*
-import ru.andvl.chatter.koog.model.tool.*
+import ru.andvl.chatter.koog.agents.utils.getLatestTotalTokenUsage
+import ru.andvl.chatter.koog.model.common.TokenUsage
+import ru.andvl.chatter.koog.model.docker.DockerBuildResult
+import ru.andvl.chatter.koog.model.docker.DockerInfoModel
+import ru.andvl.chatter.koog.model.tool.GithubChatRequest
+import ru.andvl.chatter.koog.model.tool.GithubRepositoryAnalysisModel
+import ru.andvl.chatter.koog.model.tool.ToolChatResponse
 
 private val dockerAnalysisKey = createStorageKey<GithubRepositoryAnalysisModel.SuccessAnalysisModel>("docker-analysis")
 private val logger = LoggerFactory.getLogger("docker-subgraph")
 
-internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphDocker():
-        AIAgentSubgraphDelegate<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse> =
+internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphDocker(
+    fixingModel: LLModel
+): AIAgentSubgraphDelegate<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse> =
     subgraph("docker-build") {
         val nodeDockerRequest by nodeDockerRequest()
         val nodeExecuteTool by nodeExecuteTool()
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
-        val nodeProcessResult by nodeProcessResult()
+        val nodeProcessResult by nodeProcessResult(fixingModel)
 
         edge(nodeStart forwardTo nodeDockerRequest onCondition { it.dockerEnv != null })
         edge(nodeStart forwardTo nodeFinish onCondition {
@@ -44,6 +48,7 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
                 tokenUsage = null,
                 repositoryReview = analysisResult.repositoryReview,
                 requirements = requirements,
+                userRequestAnalysis = analysisResult.userRequestAnalysis,
                 dockerInfo = null
             )
         } )
@@ -130,6 +135,7 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
                             LLMCapability.Temperature,
                             LLMCapability.Completion,
                             LLMCapability.Tools,
+                            LLMCapability.OpenAIEndpoint.Completions
                         )
                     )
                 }
@@ -139,7 +145,9 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
         }
     }
 
-private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeProcessResult() =
+private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeProcessResult(
+    fixingModel: LLModel
+) =
     node<String, ToolChatResponse>("process-docker-result") { rawDockerData ->
         val analysisResult = storage.get(dockerAnalysisKey)!!
         val requirements = storage.get(requirementsKey)
@@ -152,9 +160,10 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
                 shortSummary = analysisResult.shortSummary,
                 toolCalls = toolCalls,
                 originalMessage = null,
-                tokenUsage = null,
+                tokenUsage = getLatestTotalTokenUsage(),
                 repositoryReview = analysisResult.repositoryReview,
                 requirements = requirements,
+                userRequestAnalysis = analysisResult.userRequestAnalysis,
                 dockerInfo = null
             )
         }
@@ -162,9 +171,9 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
         // Parse Docker build results from LLM response
         llm.writeSession {
             appendPrompt {
-                model = model.copy(
-                    id = "z-ai/glm-4.6"
-                )
+//                model = model.copy(
+//                    id = "z-ai/glm-4.6"
+//                )
 
                 system("""
                     You are an expert at parsing Docker build results and creating structured reports.
@@ -218,15 +227,7 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
                     )
                 ),
                 fixingParser = StructureFixingParser(
-                    fixingModel = LLModel(
-                        provider = LLMProvider.OpenRouter,
-                        id = "z-ai/glm-4.6",
-                        capabilities = listOf(
-                            LLMCapability.Temperature,
-                            LLMCapability.Completion,
-                        ),
-                        contextLength = FIXING_MAX_CONTEXT_LENGTH,
-                    ),
+                    fixingModel = fixingModel,
                     retries = 3
                 )
             )
@@ -251,9 +252,16 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
                 shortSummary = analysisResult.shortSummary,
                 toolCalls = toolCalls,
                 originalMessage = null,
-                tokenUsage = null,
+                tokenUsage = response.getOrNull()?.message?.metaInfo?.let {
+                    TokenUsage(
+                        promptTokens = it.inputTokensCount ?: 0,
+                        completionTokens = it.outputTokensCount ?: 0,
+                        totalTokens = it.totalTokensCount ?: 0,
+                    )
+                },
                 repositoryReview = analysisResult.repositoryReview,
                 requirements = requirements,
+                userRequestAnalysis = analysisResult.userRequestAnalysis,
                 dockerInfo = dockerInfo
             )
         }

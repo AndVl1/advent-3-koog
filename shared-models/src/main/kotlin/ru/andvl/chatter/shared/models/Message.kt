@@ -1,5 +1,6 @@
 package ru.andvl.chatter.shared.models
 
+import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -13,7 +14,7 @@ data class SharedMessage(
     val role: MessageRole,
     val content: String,
     val meta: MessageMeta,
-    val timestamp: Instant = kotlinx.datetime.Clock.System.now()
+    val timestamp: Instant = Clock.System.now()
 )
 
 /**

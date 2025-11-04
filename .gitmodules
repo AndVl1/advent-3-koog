@@ -1,0 +1,3 @@
+[submodule "thirdpatry/koog"]
+	path = thirdpatry/koog
+	url = https://github.com/JetBrains/koog
