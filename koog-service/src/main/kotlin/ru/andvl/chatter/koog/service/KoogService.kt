@@ -252,7 +252,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             val agentConfig = AIAgentConfig(
                 prompt = prompt,
                 model = model,
-                maxAgentIterations = 200,
+                maxAgentIterations = 600,
             )
 
             // Create fixing model for error correction

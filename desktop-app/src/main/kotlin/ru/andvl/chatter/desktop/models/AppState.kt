@@ -36,6 +36,7 @@ enum class LLMProvider(
             "z-ai/glm-4.6",
             "qwen/qwen3-coder",
             "z-ai/glm-4.5-air",
+            "z-ai/glm-4.5-air:free",
             "deepseek/deepseek-chat",
             "openai/gpt-5-nano",
         )
