@@ -7,11 +7,15 @@ import ai.koog.agents.core.dsl.extension.onAssistantMessage
 import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.environment.ReceivedToolResult
 import ai.koog.agents.core.environment.executeTool
+import ai.koog.agents.memory.config.MemoryScopeType
+import ai.koog.agents.memory.feature.withMemory
 import ai.koog.prompt.llm.LLMCapability
+import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
+import ru.andvl.chatter.koog.agents.memory.*
 import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
 import ru.andvl.chatter.koog.model.tool.InitialPromptAnalysisModel
@@ -23,15 +27,36 @@ private val initialAnalysisKey = createStorageKey<InitialPromptAnalysisModel>("i
 private val logger = LoggerFactory.getLogger("mcp")
 
 internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubLLMRequest(
-    fixingModel: ai.koog.prompt.llm.LLModel
+    fixingModel: LLModel
 ): AIAgentSubgraphDelegate<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel> =
     subgraph<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>(
         "initial-analysis",
         tools = McpProvider.getGoogleDocsToolsRegistry().tools
-//        toolSelectionStrategy = ToolSelectionStrategy.Tools(
-//            McpProvider.getGoogleDocsToolsDescriptors()
-//        )
     ) {
+        val saveRequirements by nodeSaveRequirementsFromLastMessage(
+            name = "save-requirements",
+            subject = MemorySubjects.HomeworkRequirements,
+            scope = MemoryScopeType.AGENT
+        )
+
+        val load by node<InitialPromptAnalysisModel, InitialPromptAnalysisModel>("load-memory") { initial ->
+            if (initial !is InitialPromptAnalysisModel.SuccessAnalysisModel) return@node initial
+            withMemory {
+                val concepts = listOf(
+                    getGeneralConditionsConcept(initial.googleDocsUrl),
+                    getImportantConstraintsConcept(initial.googleDocsUrl),
+                    getAdditionalAdvantagesConcept(initial.googleDocsUrl),
+                    getAttentionPointsConcept(initial.googleDocsUrl),
+                )
+                concepts.forEach {
+                    loadFactsToAgent(
+                        llm, it, listOf(MemoryScopeType.AGENT), subjects = listOf(MemorySubjects.HomeworkRequirements),
+                    )
+                }
+            }
+            initial
+        }
+
         val nodeInitialAnalysis by nodeInitialAnalysis(fixingModel)
         val nodeRequirementsCollection by nodeRequirementsCollection()
         val nodeProcessFinalRequirements by nodeProcessFinalRequirements(fixingModel)
@@ -39,18 +64,22 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
 
         edge(nodeStart forwardTo nodeInitialAnalysis)
-        edge(nodeInitialAnalysis forwardTo nodeRequirementsCollection)
+        edge(nodeInitialAnalysis forwardTo load)
+        edge(load forwardTo nodeRequirementsCollection)
+
         edge(nodeRequirementsCollection forwardTo nodeExecuteTool onToolCall { true })
         edge(nodeRequirementsCollection forwardTo nodeProcessFinalRequirements onAssistantMessage { true })
         edge(nodeExecuteTool forwardTo nodeSendToolResult)
         edge(nodeSendToolResult forwardTo nodeExecuteTool onToolCall { true })
         edge(nodeSendToolResult forwardTo nodeProcessFinalRequirements onAssistantMessage { true })
-        edge(nodeProcessFinalRequirements forwardTo nodeFinish)
+
+        edge(nodeProcessFinalRequirements forwardTo saveRequirements)
+        edge(saveRequirements forwardTo nodeFinish)
     }
 
 // Node 1: Initial analysis of user request to extract GitHub URL and basic requirements
 private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeInitialAnalysis(
-    fixingModel: ai.koog.prompt.llm.LLModel
+    fixingModel: LLModel
 ) =
     node<GithubChatRequest, InitialPromptAnalysisModel>("initial-analysis") { request ->
         llm.writeSession {
@@ -171,25 +200,36 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                             system("""
                                 You are an expert at extracting structured requirements from Google Docs documents.
 
+                                **MEMORY CHECK FIRST:**
+                                Before using any tools, check if the conversation context already contains structured requirements for this Google Doc URL.
+                                - Look for RequirementsAnalysisModel with general conditions, constraints, advantages, and attention points
+                                - If complete requirements are already present in the context, DO NOT use MCP tools
+                                - Instead, proceed directly to finalizing the analysis with existing data
+
                                 **YOUR SOLE TASK:**
+                                Only if requirements are NOT found in context:
                                 Read and extract requirements from the provided Google Docs document. DO NOT analyze any code or search for solutions at this stage.
 
                                 **PROCESS:**
-                                1. Use Google Docs MCP tools ONLY to read the document content
-                                2. Extract requirements exactly as written in the document
-                                3. Structure the requirements for later GitHub repository analysis
-                                4. DO NOT use any tools to search GitHub or analyze code
-                                5. DO NOT attempt to find if requirements are met in the repository
+                                1. First: Check context for existing requirements
+                                2. If found: Skip Google Docs reading, use existing requirements
+                                3. If not found: Use Google Docs MCP tools to read the document
+                                4. Extract requirements exactly as written in the document
+                                5. Structure the requirements for later GitHub repository analysis
+                                6. DO NOT use any tools to search GitHub or analyze code
+                                7. DO NOT attempt to find if requirements are met in the repository
 
                                 **IMPORTANT:**
-                                - Your tools should be used ONLY for reading the requirements document
+                                - Check context FIRST before making any tool calls
+                                - If requirements are already loaded from memory, DO NOT call Google Docs MCP tools
+                                - Your tools should be used ONLY for reading the requirements document when needed
                                 - DO NOT look for code examples or implementations
                                 - DO NOT search for files or code that satisfy requirements
                                 - Focus ONLY on understanding what the requirements are
                                 - The actual verification will happen in a separate analysis stage
 
                                 **LANGUAGE REQUIREMENT:**
-                                - Detect the language of the document content
+                                - Detect the language of the document content or existing requirements
                                 - Extract requirements in the SAME language as the document
                                 - If document is in Russian, provide requirements in Russian
                                 - If document is in English, provide requirements in English
@@ -201,7 +241,7 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                                 - Additional advantages (positive aspects for evaluation)
                                 - Attention points (things requiring careful human review)
 
-                                Remember: You are collecting requirements, not verifying them. Analysis comes later.
+                                Remember: Check memory context first, collect requirements only if not already available.
                             """.trimIndent())
 
                             user("Please read the Google Docs document at ${initialAnalysis.googleDocsUrl} and extract all requirements. Do NOT analyze any code - just collect the requirements as written in the document.")
@@ -226,7 +266,7 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
 
 // Node 4: Process final requirements and return complete analysis
 private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeProcessFinalRequirements(
-    fixingModel: ai.koog.prompt.llm.LLModel
+    fixingModel: LLModel
 ) =
     node<String, InitialPromptAnalysisModel.SuccessAnalysisModel>("process-final-requirements") { rawRequirementsData ->
         val initialAnalysis = storage.get(initialAnalysisKey) as InitialPromptAnalysisModel.SuccessAnalysisModel
@@ -294,7 +334,13 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
                     )
                 )
 
-                response.getOrThrow().structure
+                val structure = response.getOrThrow().structure
+
+                withMemory {
+
+                }
+
+                structure
             }
         } else {
             // Requirements already collected
