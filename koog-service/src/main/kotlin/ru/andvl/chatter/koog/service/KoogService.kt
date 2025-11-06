@@ -6,6 +6,7 @@ import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.features.tracing.feature.Tracing
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageFileWriter
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageLogWriter
+import ai.koog.agents.memory.feature.AgentMemory
 import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.clients.openrouter.OpenRouterModels
 import ai.koog.prompt.executor.model.PromptExecutor
@@ -22,6 +23,7 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import ru.andvl.chatter.koog.agents.mcp.getGithubAnalysisStrategy
 import ru.andvl.chatter.koog.agents.mcp.getToolAgentPrompt
+import ru.andvl.chatter.koog.agents.memory.githubMemoryProvider
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
 import ru.andvl.chatter.koog.agents.utils.createFixingModel
@@ -277,6 +279,11 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                             outputPath,
                             { path: Path -> SystemFileSystem.sink(path).buffered() }
                         ))
+                    }
+
+                    install(AgentMemory) {
+                        agentName = "github-helper"
+                        memoryProvider = githubMemoryProvider
                     }
                 }
             )
