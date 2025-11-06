@@ -62,3 +62,4 @@ server/gradle.properties.example
 
 desktop-app/logs/
 .kotlin/
+/memory/

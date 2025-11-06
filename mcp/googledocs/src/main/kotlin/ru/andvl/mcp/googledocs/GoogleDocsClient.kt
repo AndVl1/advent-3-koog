@@ -7,6 +7,7 @@ import com.google.api.services.docs.v1.DocsScopes
 import com.google.api.services.docs.v1.model.Document
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
+import com.google.api.services.sheets.v4.SheetsScopes
 import com.google.auth.http.HttpCredentialsAdapter
 import com.google.auth.oauth2.GoogleCredentials
 import kotlinx.coroutines.Dispatchers
@@ -26,10 +27,10 @@ class GoogleDocsClient(
     private val logger = LoggerFactory.getLogger(GoogleDocsClient::class.java)
     private val applicationName = "Homework Checker MCP Server"
 
-    private val httpTransport = GoogleNetHttpTransport.newTrustedTransport()
-    private val jsonFactory = GsonFactory.getDefaultInstance()
+    val httpTransport = GoogleNetHttpTransport.newTrustedTransport()
+    val jsonFactory = GsonFactory.getDefaultInstance()
 
-    private val credentials: GoogleCredentials by lazy {
+    val credentials: GoogleCredentials by lazy {
         createCredentials()
     }
 
@@ -45,8 +46,14 @@ class GoogleDocsClient(
             .build()
     }
 
+
     private fun createCredentials(): GoogleCredentials {
-        val scopes = listOf(DocsScopes.DOCUMENTS_READONLY, DriveScopes.DRIVE_READONLY)
+        val scopes = listOf(
+            DocsScopes.DOCUMENTS_READONLY,
+            DriveScopes.DRIVE_READONLY,
+            SheetsScopes.SPREADSHEETS,
+            SheetsScopes.DRIVE
+        )
 
         return when {
             serviceAccountJson != null -> {
@@ -200,7 +207,8 @@ class GoogleDocsClient(
             false
         }
     }
-}
+
+  }
 
 /**
  * Модели данных для Google Docs

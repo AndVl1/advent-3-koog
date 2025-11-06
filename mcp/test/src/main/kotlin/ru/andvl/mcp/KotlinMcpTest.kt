@@ -12,6 +12,7 @@ import kotlinx.io.asSource
 import kotlinx.io.buffered
 import ru.andvl.mcp.googledocs.GoogleDocsMcpTest
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * Тест Kotlin MCP сервера
@@ -19,11 +20,13 @@ import java.io.File
  * Тестирует Kotlin реализацию MCP сервера с инструментами:
  * - GitHub: get-repo-base-info, hello-world
  * - Telegraph: create-telegraph-account, get-telegraph-account-info
+ * - Google Docs: get-document-info, get-document-content
+ * - Google Sheets: get-spreadsheet-info, get-sheet-content, update-sheet-content, append-to-sheet, create-sheet, delete-sheet
  *
- * Перед запуском: ./gradlew :mcp:github:build :mcp:telegraph:build
+ * Перед запуском: ./gradlew :mcp:github:build :mcp:telegraph:build :mcp:googledocs:shadowJar
  */
 fun main() = runBlocking {
-    println("🧪 Тестирование MCP серверов (GitHub и Telegraph)...")
+    println("🧪 Тестирование MCP серверов (GitHub, Telegraph, Google Docs, and Google Sheets)...")
 
     // Загружаем переменные окружения из .env
     val dotenv = dotenv { ignoreIfMissing = true }
@@ -45,6 +48,11 @@ fun main() = runBlocking {
     println("\n" + "=".repeat(50))
 
     GoogleDocsMcpTest().testGoogleDocsMcpServer()
+
+    println("\n" + "=".repeat(50))
+
+    // Тестируем Google Sheets MCP сервер
+    testGoogleSheetsMcpServer()
 }
 
 /**
@@ -392,4 +400,171 @@ console.log("Edited content!");
     }
 
     println("\n✅ Тестирование Telegraph завершено")
+}
+
+/**
+ * Тестирование Google Sheets MCP сервера
+ */
+suspend fun testGoogleSheetsMcpServer() {
+    println("\n🧪 Тестирование Google Sheets MCP сервера...")
+
+    val jarPath = "mcp/googledocs/build/libs/googledocs-0.1.0.jar"
+    val jarFile = File(jarPath)
+
+    if (!jarFile.exists()) {
+        println("❌ Google Sheets JAR файл не найден: $jarPath")
+        println("💡 Запустите: ./gradlew :mcp:googledocs:shadowJar")
+        return
+    }
+
+    println("✅ Google Sheets JAR файл найден: $jarPath")
+
+    // Extract spreadsheet ID from URL
+    val spreadsheetUrl = "https://docs.google.com/spreadsheets/d/1WX5XfE-GoaspvwICjBujW7_XNAh1aIDTUQ2ESmTAVNY/edit?gid=1747343534#gid=1747343534"
+    val spreadsheetId = "1WX5XfE-GoaspvwICjBujW7_XNAh1aIDTUQ2ESmTAVNY"
+    val testSheetName = "RK1lev1" // Default sheet name
+
+    println("🚀 Запуск Google Sheets MCP сервера...")
+    val process = ProcessBuilder("java", "-jar", jarFile.absolutePath)
+        .redirectErrorStream(false)
+        .start()
+
+    delay(2000)
+
+    if (!process.isAlive) {
+        println("❌ Google Sheets процесс завершился с кодом: ${process.exitValue()}")
+        return
+    }
+
+    val transport = StdioClientTransport(
+        input = process.inputStream.asSource().buffered(),
+        output = process.outputStream.asSink().buffered()
+    )
+
+    val client = Client(
+        clientInfo = Implementation(name = "kotlin-googlesheets-test-client", version = "1.0.0"),
+    )
+
+    try {
+        println("🔌 Подключение к Google Sheets серверу...")
+        client.connect(transport)
+        delay(1000)
+        println("✅ Подключено успешно!")
+
+        println("🔍 Получение списка инструментов...")
+        val toolsList = client.listTools()?.tools?.map { it.name }
+        println("Available Tools = $toolsList")
+
+        // Test 1: Get spreadsheet info
+        if (toolsList?.contains("get-spreadsheet-info") == true) {
+            println("\n🔧 Тест 1: Получение информации о таблице...")
+            val result = client.callTool("get-spreadsheet-info", mapOf(
+                "spreadsheetId" to spreadsheetId
+            ))?.content?.map { if (it is TextContent) it.text else it.toString() }
+
+            println("📋 Информация о таблице: ${result?.joinToString()}")
+        }
+
+        // Test 2: Get sheet content
+        if (toolsList?.contains("get-sheet-content") == true) {
+            println("\n🔧 Тест 2: Получение содержимого листа...")
+            val result = client.callTool("get-sheet-content", mapOf(
+                "spreadsheetId" to spreadsheetId,
+                "sheetName" to testSheetName
+            ))?.content?.map { if (it is TextContent) it.text else it.toString() }
+
+            println("📋 Содержимое листа: ${result?.joinToString()}")
+        }
+
+        // Test 3: Update sheet content
+        if (toolsList?.contains("update-sheet-content") == true) {
+            println("\n🔧 Тест 3: Обновление содержимого листа...")
+            val result = client.callTool("update-sheet-content", mapOf(
+                "spreadsheetId" to spreadsheetId,
+                "range" to "${testSheetName}!A10:C10",
+                "values" to listOf(
+                    listOf("Test Data", "Updated via MCP", java.time.LocalDateTime.now().toString())
+                )
+            ))?.content?.map { if (it is TextContent) it.text else it.toString() }
+
+            println("📋 Результат обновления: ${result?.joinToString()}")
+        }
+
+        // Test 4: Append to sheet
+        if (toolsList?.contains("append-to-sheet") == true) {
+            println("\n🔧 Тест 4: Добавление данных в лист...")
+            val result = client.callTool("append-to-sheet", mapOf(
+                "spreadsheetId" to spreadsheetId,
+                "range" to "${testSheetName}!A:C",
+                "values" to listOf(
+                    listOf("Appended Data", "Via MCP", java.time.LocalDateTime.now().toString())
+                )
+            ))?.content?.map { if (it is TextContent) it.text else it.toString() }
+
+            println("📋 Результат добавления: ${result?.joinToString()}")
+        }
+
+        // Test 5: Create new sheet
+        if (toolsList?.contains("create-sheet") == true) {
+            println("\n🔧 Тест 5: Создание нового листа...")
+            val testSheetTitle = "MCP Test Sheet ${System.currentTimeMillis()}"
+            val result = client.callTool("create-sheet", mapOf(
+                "spreadsheetId" to spreadsheetId,
+                "title" to testSheetTitle,
+                "rowCount" to 100,
+                "columnCount" to 10
+            ))?.content?.map { if (it is TextContent) it.text else it.toString() }
+
+            println("📋 Результат создания листа: ${result?.joinToString()}")
+
+            // Test 6: Delete the created sheet (extract sheet ID from result)
+            result?.firstOrNull()?.let { jsonStr ->
+                // Simple extraction of sheetId from JSON response
+                val sheetIdRegex = "\"sheetId\":\"([^\"]+)\"".toRegex()
+                val sheetIdMatch = sheetIdRegex.find(jsonStr)
+                val createdSheetId = sheetIdMatch?.groupValues?.get(1)
+
+                if (createdSheetId != null && toolsList.contains("delete-sheet")) {
+                    println("\n🔧 Тест 6: Удаление созданного листа...")
+                    val deleteResult = client.callTool("delete-sheet", mapOf(
+                        "spreadsheetId" to spreadsheetId,
+                        "sheetId" to createdSheetId
+                    ))?.content?.map { if (it is TextContent) it.text else it.toString() }
+
+                    println("📋 Результат удаления: ${deleteResult?.joinToString()}")
+                }
+            }
+        }
+
+        // Verify the updates by reading the sheet again
+        if (toolsList?.contains("get-sheet-content") == true) {
+            println("\n🔧 Финальная проверка: Чтение обновленного содержимого...")
+            val result = client.callTool("get-sheet-content", mapOf(
+                "spreadsheetId" to spreadsheetId,
+                "range" to "${testSheetName}!A8:C15"
+            ))?.content?.map { if (it is TextContent) it.text else it.toString() }
+
+            println("📋 Обновленное содержимое: ${result?.joinToString()}")
+        }
+
+    } catch (e: Exception) {
+        println("❌ Ошибка вызова инструмента: ${e.message}")
+        e.printStackTrace()
+    } finally {
+        println("🔚 Закрытие соединения...")
+        try {
+            client.close()
+        } catch (e: Exception) {
+            println("⚠️ Ошибка закрытия клиента: ${e.message}")
+        }
+
+        println("🛑 Остановка Google Sheets сервера...")
+        process.destroy()
+        if (!process.waitFor(5, TimeUnit.SECONDS)) {
+            println("⚠️ Принудительное завершение процесса...")
+            process.destroyForcibly()
+        }
+    }
+
+    println("\n✅ Тестирование Google Sheets завершено")
 }
