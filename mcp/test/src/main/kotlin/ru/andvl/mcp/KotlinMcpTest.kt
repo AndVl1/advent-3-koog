@@ -470,7 +470,8 @@ suspend fun testGoogleSheetsMcpServer() {
             println("\n🔧 Тест 2: Получение содержимого листа...")
             val result = client.callTool("get-sheet-content", mapOf(
                 "spreadsheetId" to spreadsheetId,
-                "sheetName" to testSheetName
+                "sheetName" to testSheetName,
+                "range" to "A8:Z8"
             ))?.content?.map { if (it is TextContent) it.text else it.toString() }
 
             println("📋 Содержимое листа: ${result?.joinToString()}")

@@ -291,7 +291,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             val githubRequest = GithubChatRequest(
                 message = request.userMessage,
                 systemPrompt = systemPrompt,
-                history = ChatHistory()
+                history = ChatHistory(),
+                googleSheetsUrl = request.googleSheetsUrl
             )
 
             try {

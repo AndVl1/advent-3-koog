@@ -9,9 +9,10 @@ internal class GithubChatRequest(
     val message: String,
     val systemPrompt: String? = null,
     val history: ChatHistory,
+    val googleSheetsUrl: String? = null,
 )
 
-internal class ToolChatResponse(
+internal data class ToolChatResponse(
     val response: String,
     val shortSummary: String,
     val toolCalls: List<String>,

@@ -45,6 +45,16 @@ sealed interface GithubAnalysisAction {
     data class SelectFixingModel(val model: String) : GithubAnalysisAction
 
     /**
+     * Toggle Google Sheets attachment
+     */
+    data class ToggleAttachGoogleSheets(val attach: Boolean) : GithubAnalysisAction
+
+    /**
+     * User changed Google Sheets URL
+     */
+    data class UpdateGoogleSheetsUrl(val url: String) : GithubAnalysisAction
+
+    /**
      * User clicked "Analyze" button
      */
     data object StartAnalysis : GithubAnalysisAction

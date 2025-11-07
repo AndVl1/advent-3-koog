@@ -15,6 +15,9 @@ data class AppState(
     // Fixing model configuration (для исправления ошибок парсинга)
     val useMainModelForFixing: Boolean = true,
     val fixingModel: String = LLMProvider.OPEN_ROUTER.defaultModel,
+    // Google Sheets integration
+    val attachGoogleSheets: Boolean = false,
+    val googleSheetsUrl: String = "",
     val isLoading: Boolean = false,
     val analysisResult: GithubAnalysisResponse? = null,
     val error: String? = null
@@ -37,22 +40,16 @@ enum class LLMProvider(
             "qwen/qwen3-coder",
             "z-ai/glm-4.5-air",
             "z-ai/glm-4.5-air:free",
+            "deepseek/deepseek-chat-v3-0324:free",
             "deepseek/deepseek-chat",
             "openai/gpt-5-nano",
         )
     ),
-    OPENAI(
-        "OpenAI",
-        "gpt-4",
-        listOf("gpt-4", "gpt-4-turbo", "gpt-3.5-turbo")
-    ),
-    ANTHROPIC(
-        "Anthropic",
-        "claude-3-5-sonnet-20241022",
+    GOOGLE(
+        "Gemini",
+        "gemini-2.5-flash",
         listOf(
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229"
+            "gemini-2.5-flash"
         )
     ),
     CUSTOM(
@@ -79,5 +76,7 @@ data class AnalysisConfig(
     val customBaseUrl: String? = null,
     val customModel: String? = null,
     val useMainModelForFixing: Boolean = true,
-    val fixingModel: String
+    val fixingModel: String,
+    val attachGoogleSheets: Boolean = false,
+    val googleSheetsUrl: String = ""
 )

@@ -23,6 +23,7 @@ import ru.andvl.chatter.koog.model.tool.RequirementsAnalysisModel
 import ru.andvl.chatter.koog.model.tool.ToolChatResponse
 
 private val initialAnalysisKey = createStorageKey<InitialPromptAnalysisModel>("initial-analysis")
+internal val initialGithubRequestKey = createStorageKey<GithubChatRequest>("initial-github-request")
 
 private val logger = LoggerFactory.getLogger("mcp")
 
@@ -82,6 +83,9 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
     fixingModel: LLModel
 ) =
     node<GithubChatRequest, InitialPromptAnalysisModel>("initial-analysis") { request ->
+        // Store the original request for use in later subgraphs (like Google Sheets)
+        storage.set(initialGithubRequestKey, request)
+
         llm.writeSession {
             appendPrompt {
                 system("""

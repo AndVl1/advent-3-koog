@@ -303,12 +303,16 @@ object GoogleDocsMcpServer {
                         put("type", JsonPrimitive("string"))
                         put("description", JsonPrimitive("Диапазон ячеек для обновления (например, A1:C10)"))
                     }
-                    put("values", buildJsonArray {
-                        addJsonObject {
+                    putJsonObject("values") {
+                        put("type", JsonPrimitive("array"))
+                        put("description", JsonPrimitive("Двумерный массив значений для записи"))
+                        putJsonObject("items") {
                             put("type", JsonPrimitive("array"))
-                            put("description", JsonPrimitive("Двумерный массив значений для записи"))
+                            putJsonObject("items") {
+                                put("type", JsonPrimitive("string"))
+                            }
                         }
-                    })
+                    }
                 },
                 required = listOf("spreadsheetId", "range", "values")
             )
@@ -364,12 +368,16 @@ object GoogleDocsMcpServer {
                         put("type", JsonPrimitive("string"))
                         put("description", JsonPrimitive("Диапазон для добавления (например, A1:C1)"))
                     }
-                    put("values", buildJsonArray {
-                        addJsonObject {
+                    putJsonObject("values") {
+                        put("type", JsonPrimitive("array"))
+                        put("description", JsonPrimitive("Двумерный массив значений для добавления"))
+                        putJsonObject("items") {
                             put("type", JsonPrimitive("array"))
-                            put("description", JsonPrimitive("Двумерный массив значений для добавления"))
+                            putJsonObject("items") {
+                                put("type", JsonPrimitive("string"))
+                            }
                         }
-                    })
+                    }
                 },
                 required = listOf("spreadsheetId", "range", "values")
             )

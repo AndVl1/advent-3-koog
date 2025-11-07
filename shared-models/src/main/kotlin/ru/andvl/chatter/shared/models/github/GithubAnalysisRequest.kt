@@ -6,5 +6,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class GithubAnalysisRequest(
     @SerialName("user_message")
-    val userMessage: String
+    val userMessage: String,
+    @SerialName("google_sheets_url")
+    val googleSheetsUrl: String? = null
 )

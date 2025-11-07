@@ -16,4 +16,10 @@ internal object MemorySubjects {
         override val promptDescription: String = "Requirements for homework assignments including general conditions, constraints, advantages, and attention points"
         override val priorityLevel: Int = 1
     }
+
+    data object GithubRepositoryAnalysis : MemorySubject() {
+        override val name: String = "github_repository_analysis"
+        override val promptDescription: String = "GitHub repository analysis results including structure, dependencies, code quality, and review findings"
+        override val priorityLevel: Int = 1
+    }
 }

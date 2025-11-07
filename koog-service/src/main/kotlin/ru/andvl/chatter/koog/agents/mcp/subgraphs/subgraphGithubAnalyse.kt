@@ -1,6 +1,7 @@
 package ru.andvl.chatter.koog.agents.mcp.subgraphs
 
 import ai.koog.agents.core.agent.entity.createStorageKey
+import ai.koog.agents.core.annotation.InternalAgentsApi
 import ai.koog.agents.core.dsl.builder.*
 import ai.koog.agents.core.dsl.extension.nodeLLMCompressHistory
 import ai.koog.agents.core.dsl.extension.nodeLLMSendToolResult
@@ -8,11 +9,14 @@ import ai.koog.agents.core.dsl.extension.onAssistantMessage
 import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.environment.ReceivedToolResult
 import ai.koog.agents.core.environment.executeTool
+import ai.koog.agents.memory.config.MemoryScopeType
+import ai.koog.agents.memory.feature.withMemory
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
+import ru.andvl.chatter.koog.agents.memory.*
 import ru.andvl.chatter.koog.agents.utils.FixedWholeHistoryCompressionStrategy
 import ru.andvl.chatter.koog.agents.utils.isHistoryTooLong
 import ru.andvl.chatter.koog.mcp.McpProvider
@@ -35,6 +39,7 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
 //            McpProvider.getGithubToolsDescriptors() + McpProvider.getUtilsToolsDescriptors()
 //        )
     ) {
+        val nodeLoadMemory by nodeLoadGithubMemory()
         val nodeGithubRequest by nodeGithubRequest()
         val nodeExecuteTool by nodeExecuteTool("github-execute-tool")
         val nodeSendToolResult by nodeLLMSendToolResult("github-subgraph-send-tool")
@@ -43,8 +48,12 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
             strategy = FixedWholeHistoryCompressionStrategy()
         )
         val nodeProcessResult by nodeProcessResult(fixingModel)
+        val nodeSaveMemory by nodeSaveGithubMemory()
 
-        edge(nodeStart forwardTo nodeGithubRequest)
+        // Load previous analysis from memory at the start
+        edge(nodeStart forwardTo /*nodeLoadMemory)
+        edge(nodeLoadMemory forwardTo*/ nodeGithubRequest)
+
         edge(nodeGithubRequest forwardTo nodeExecuteTool onToolCall { true })
         edge(nodeGithubRequest forwardTo nodeProcessResult onAssistantMessage { true })
 
@@ -54,8 +63,10 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
         edge(nodeExecuteTool forwardTo nodeSendToolResult onCondition { !isHistoryTooLong() })
         edge(nodeSendToolResult forwardTo nodeExecuteTool onToolCall { true })
         edge(nodeSendToolResult forwardTo nodeProcessResult onAssistantMessage { true })
-        edge(nodeProcessResult forwardTo nodeFinish)
 
+        // Save analysis to memory before finish (but don't force finish)
+        edge(nodeProcessResult forwardTo nodeSaveMemory)
+        edge(nodeSaveMemory forwardTo nodeFinish)
     }
 
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeGithubRequest() =
@@ -433,4 +444,66 @@ private fun AIAgentSubgraphBuilderBase<*, *>.nodeExecuteTool(
         storage.set(toolCallsKey, currentCalls + "${toolCall.tool} ${toolCall.content}")
 
         environment.executeTool(toolCall)
+    }
+
+// Load GitHub analysis from memory
+@OptIn(InternalAgentsApi::class)
+private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeLoadGithubMemory() =
+    node<InitialPromptAnalysisModel.SuccessAnalysisModel, InitialPromptAnalysisModel.SuccessAnalysisModel>("load-github-memory") { request ->
+        withMemory {
+            val repoUrl = request.githubRepo
+            logger.info("📚 Loading GitHub analysis from memory for: $repoUrl")
+
+            val concepts = listOf(
+                getRepositoryUrlConcept(repoUrl),
+                getRepositoryStructureConcept(repoUrl),
+                getRepositoryDependenciesConcept(repoUrl),
+                getRepositoryKeyFindingsConcept(repoUrl),
+                getRepositoryAnalysisSummaryConcept(repoUrl)
+            )
+
+            concepts.forEach { concept ->
+                loadFactsToAgent(
+                    llm,
+                    concept,
+                    listOf(MemoryScopeType.AGENT),
+                    subjects = listOf(MemorySubjects.GithubRepositoryAnalysis)
+                )
+            }
+
+            logger.info("✅ Loaded GitHub analysis facts for: $repoUrl")
+        }
+
+        request
+    }
+
+// Save GitHub analysis to memory
+@OptIn(InternalAgentsApi::class)
+private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeSaveGithubMemory() =
+    node<GithubRepositoryAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>("save-github-memory") { analysisResult ->
+        val originalRequest = storage.get(originalRequestKey)
+        val repoUrl = originalRequest?.githubRepo ?: ""
+
+        if (repoUrl.isNotBlank()) {
+            logger.info("💾 Saving GitHub analysis to memory for: $repoUrl")
+
+            withMemory {
+                val memoryScope = scopesProfile.getScope(MemoryScopeType.AGENT)
+                if (memoryScope != null) {
+                    saveGithubAnalysisFromModel(
+                        llm = llm,
+                        subject = MemorySubjects.GithubRepositoryAnalysis,
+                        scope = memoryScope,
+                        model = analysisResult,
+                        repoUrl = repoUrl
+                    )
+                }
+            }
+
+            logger.info("✅ Saved GitHub analysis for: $repoUrl")
+        } else {
+            logger.warn("⚠️ No repository URL found, skipping memory save")
+        }
+
+        analysisResult
     }
