@@ -38,6 +38,7 @@ enum class LLMProvider(
         listOf(
             "z-ai/glm-4.6",
             "qwen/qwen3-coder",
+            "google/gemini-2.5-flash",
             "z-ai/glm-4.5-air",
             "z-ai/glm-4.5-air:free",
             "deepseek/deepseek-chat-v3-0324:free",
