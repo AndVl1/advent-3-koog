@@ -292,7 +292,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 message = request.userMessage,
                 systemPrompt = systemPrompt,
                 history = ChatHistory(),
-                googleSheetsUrl = request.googleSheetsUrl
+                googleSheetsUrl = request.googleSheetsUrl,
+                forceSkipDocker = request.forceSkipDocker
             )
 
             try {

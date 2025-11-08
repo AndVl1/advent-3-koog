@@ -8,5 +8,7 @@ data class GithubAnalysisRequest(
     @SerialName("user_message")
     val userMessage: String,
     @SerialName("google_sheets_url")
-    val googleSheetsUrl: String? = null
+    val googleSheetsUrl: String? = null,
+    @SerialName("force_skip_docker")
+    val forceSkipDocker: Boolean = true
 )

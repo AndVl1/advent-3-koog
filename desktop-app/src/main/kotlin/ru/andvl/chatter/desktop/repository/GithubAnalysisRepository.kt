@@ -40,7 +40,8 @@ class GithubAnalysisRepository {
                     userMessage = config.userInput,
                     googleSheetsUrl = if (config.attachGoogleSheets && config.googleSheetsUrl.isNotBlank()) {
                         config.googleSheetsUrl
-                    } else null
+                    } else null,
+                    forceSkipDocker = config.forceSkipDocker
                 )
 
                 val llmConfig = LLMConfig(

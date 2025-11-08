@@ -538,6 +538,29 @@ private fun InputSection(
                 color = MaterialTheme.colorScheme.primary
             )
 
+            // Force Skip Docker Checkbox
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = state.forceSkipDocker,
+                    onCheckedChange = { onAction(GithubAnalysisAction.ToggleForceSkipDocker(it)) }
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "Skip Docker build",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "Uncheck to enable Docker image building and analysis",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             // Fixing Model Checkbox
             Row(
                 modifier = Modifier.fillMaxWidth(),

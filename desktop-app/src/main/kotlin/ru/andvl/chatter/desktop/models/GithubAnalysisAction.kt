@@ -55,6 +55,11 @@ sealed interface GithubAnalysisAction {
     data class UpdateGoogleSheetsUrl(val url: String) : GithubAnalysisAction
 
     /**
+     * Toggle force skip Docker build
+     */
+    data class ToggleForceSkipDocker(val forceSkip: Boolean) : GithubAnalysisAction
+
+    /**
      * User clicked "Analyze" button
      */
     data object StartAnalysis : GithubAnalysisAction
