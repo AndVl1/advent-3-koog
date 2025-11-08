@@ -27,7 +27,10 @@ class GithubAnalysisRepository {
             try {
                 val promptExecutor = createPromptExecutor(config)
                 val request = GithubAnalysisRequest(
-                    userMessage = config.userInput
+                    userMessage = config.userInput,
+                    googleSheetsUrl = if (config.attachGoogleSheets && config.googleSheetsUrl.isNotBlank()) {
+                        config.googleSheetsUrl
+                    } else null
                 )
 
                 val llmConfig = ru.andvl.chatter.shared.models.github.LLMConfig(

@@ -479,6 +479,56 @@ private fun InputSection(
                 isError = state.error?.contains("API Key is required", ignoreCase = true) == true
             )
 
+            // Google Sheets Integration Divider
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Text(
+                text = "Google Sheets Integration",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            // Google Sheets Attachment Checkbox
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = state.attachGoogleSheets,
+                    onCheckedChange = { onAction(GithubAnalysisAction.ToggleAttachGoogleSheets(it)) }
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "Attach Google Sheets for results",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "Fill Google Sheets with structured analysis data",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Google Sheets URL (shown only when checkbox is checked)
+            if (state.attachGoogleSheets) {
+                OutlinedTextField(
+                    value = state.googleSheetsUrl,
+                    onValueChange = { onAction(GithubAnalysisAction.UpdateGoogleSheetsUrl(it)) },
+                    label = { Text("Google Sheets URL *") },
+                    placeholder = { Text("https://docs.google.com/spreadsheets/d/...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    supportingText = {
+                        Text(
+                            text = "Required when Google Sheets integration is enabled",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                )
+            }
+
             // Advanced Settings Divider
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 

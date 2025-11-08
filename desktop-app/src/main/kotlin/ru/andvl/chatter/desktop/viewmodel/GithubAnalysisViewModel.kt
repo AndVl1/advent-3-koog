@@ -37,6 +37,8 @@ class GithubAnalysisViewModel(
             is GithubAnalysisAction.UpdateCustomModel -> handleUpdateCustomModel(action.model)
             is GithubAnalysisAction.ToggleUseMainModelForFixing -> handleToggleUseMainModelForFixing(action.useMain)
             is GithubAnalysisAction.SelectFixingModel -> handleSelectFixingModel(action.model)
+            is GithubAnalysisAction.ToggleAttachGoogleSheets -> handleToggleAttachGoogleSheets(action.attach)
+            is GithubAnalysisAction.UpdateGoogleSheetsUrl -> handleUpdateGoogleSheetsUrl(action.url)
             is GithubAnalysisAction.StartAnalysis -> handleStartAnalysis()
             is GithubAnalysisAction.ClearError -> handleClearError()
             is GithubAnalysisAction.ClearResult -> handleClearResult()
@@ -80,6 +82,14 @@ class GithubAnalysisViewModel(
         _state.update { it.copy(fixingModel = model) }
     }
 
+    private fun handleToggleAttachGoogleSheets(attach: Boolean) {
+        _state.update { it.copy(attachGoogleSheets = attach) }
+    }
+
+    private fun handleUpdateGoogleSheetsUrl(url: String) {
+        _state.update { it.copy(googleSheetsUrl = url) }
+    }
+
     private fun handleStartAnalysis() {
         viewModelScope.launch {
             _state.update {
@@ -115,7 +125,9 @@ class GithubAnalysisViewModel(
                     }
                 } else {
                     currentState.fixingModel
-                }
+                },
+                attachGoogleSheets = currentState.attachGoogleSheets,
+                googleSheetsUrl = if (currentState.attachGoogleSheets) currentState.googleSheetsUrl else ""
             )
 
             val result = interactor.analyzeRepository(config)
