@@ -49,7 +49,9 @@ class GithubAnalysisRepository {
                     model = config.selectedModel,
                     apiKey = config.apiKey,
                     baseUrl = config.customBaseUrl,
-                    fixingModel = config.fixingModel
+                    fixingModel = config.fixingModel,
+                    maxContextTokens = config.maxContextTokens,
+                    fixingMaxContextTokens = config.fixingMaxContextTokens
                 )
 
                 val response = koogService.analyseGithub(promptExecutor, request, llmConfig)

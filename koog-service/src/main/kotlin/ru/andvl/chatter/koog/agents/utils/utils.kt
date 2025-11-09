@@ -22,10 +22,13 @@ internal suspend fun AIAgentContext.getLatestTotalTokenUsage(): TokenUsage? = ll
         }
 }
 
-internal suspend fun AIAgentContext.isHistoryTooLong(): Boolean = llm.readSession { getLatestTokenUsage() > PROMPT_MAX_CONTEXT_LENGTH * 0.8 }
-    .also { println("TOKEN USAGE: ${getLatestTokenUsage()}, MAX CONTEXT: ${PROMPT_MAX_CONTEXT_LENGTH * 0.8}") }
-
-private const val PROMPT_MAX_CONTEXT_LENGTH = 50_000L
+internal suspend fun AIAgentContext.isHistoryTooLong(): Boolean {
+    val maxContextLength = llm.readSession { model.contextLength }
+    val currentUsage = getLatestTokenUsage()
+    val threshold = maxContextLength * 0.8
+    return llm.readSession { currentUsage > threshold }
+        .also { println("TOKEN USAGE: $currentUsage, MAX CONTEXT: $threshold (${maxContextLength} total)") }
+}
 
 internal const val FIXING_MAX_CONTEXT_LENGTH: Long = 20_000L
 

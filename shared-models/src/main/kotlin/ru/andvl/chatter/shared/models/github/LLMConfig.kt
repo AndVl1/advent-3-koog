@@ -11,5 +11,7 @@ data class LLMConfig(
     val model: String,
     val apiKey: String? = null,
     val baseUrl: String? = null,
-    val fixingModel: String? = null  // Модель для исправления ошибок парсинга
+    val fixingModel: String? = null,  // Модель для исправления ошибок парсинга
+    val maxContextTokens: Long = 100_000L,  // Максимальный размер контекста для основной модели
+    val fixingMaxContextTokens: Long = 20_000L  // Максимальный размер контекста для fixing модели
 )
