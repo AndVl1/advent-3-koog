@@ -101,7 +101,10 @@ class GithubAnalysisRepository {
         )
         val baseExecutor = SingleLLMPromptExecutor(resilientClient)
         val cachedExecutor = CachedPromptExecutor(
-            cache = FilePromptCache(Path("./memory/prompt_cache")),
+            cache = FilePromptCache(
+                storage = Path("./memory/prompt_cache"),
+                maxFiles = 10
+            ),
             nested = baseExecutor
         )
         return cachedExecutor

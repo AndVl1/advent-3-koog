@@ -4,11 +4,10 @@ import ai.koog.agents.core.agent.entity.createStorageKey
 import ai.koog.agents.core.annotation.InternalAgentsApi
 import ai.koog.agents.core.dsl.builder.*
 import ai.koog.agents.core.dsl.extension.nodeLLMCompressHistory
-import ai.koog.agents.core.dsl.extension.nodeLLMSendToolResult
-import ai.koog.agents.core.dsl.extension.onAssistantMessage
-import ai.koog.agents.core.dsl.extension.onToolCall
+import ai.koog.agents.core.dsl.extension.nodeLLMSendMultipleToolResults
+import ai.koog.agents.core.dsl.extension.onMultipleAssistantMessages
+import ai.koog.agents.core.dsl.extension.onMultipleToolCalls
 import ai.koog.agents.core.environment.ReceivedToolResult
-import ai.koog.agents.core.environment.executeTool
 import ai.koog.agents.memory.config.MemoryScopeType
 import ai.koog.agents.memory.feature.withMemory
 import ai.koog.prompt.llm.LLMCapability
@@ -42,8 +41,8 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
         val nodeLoadMemory by nodeLoadGithubMemory()
         val nodeGithubRequest by nodeGithubRequest()
         val nodeExecuteTool by nodeExecuteTool("github-execute-tool")
-        val nodeSendToolResult by nodeLLMSendToolResult("github-subgraph-send-tool")
-        val nodeCompressHistory by nodeLLMCompressHistory<ReceivedToolResult>(
+        val nodeSendToolResult by nodeLLMSendMultipleToolResults("github-subgraph-send-tool")
+        val nodeCompressHistory by nodeLLMCompressHistory<List<ReceivedToolResult>>(
             name = "github-compress-history",
             strategy = FixedWholeHistoryCompressionStrategy()
         )
@@ -54,15 +53,21 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
         edge(nodeStart forwardTo /*nodeLoadMemory)
         edge(nodeLoadMemory forwardTo*/ nodeGithubRequest)
 
-        edge(nodeGithubRequest forwardTo nodeExecuteTool onToolCall { true })
-        edge(nodeGithubRequest forwardTo nodeProcessResult onAssistantMessage { true })
+        edge(nodeGithubRequest forwardTo nodeExecuteTool onMultipleToolCalls { true })
+        edge(nodeGithubRequest forwardTo nodeProcessResult
+                onMultipleAssistantMessages { true }
+                transformed { it.joinToString("\n") { message -> message.content } }
+        )
 
         edge(nodeExecuteTool forwardTo nodeCompressHistory onCondition { isHistoryTooLong() })
         edge(nodeCompressHistory forwardTo nodeSendToolResult)
 
         edge(nodeExecuteTool forwardTo nodeSendToolResult onCondition { !isHistoryTooLong() })
-        edge(nodeSendToolResult forwardTo nodeExecuteTool onToolCall { true })
-        edge(nodeSendToolResult forwardTo nodeProcessResult onAssistantMessage { true })
+        edge(nodeSendToolResult forwardTo nodeExecuteTool onMultipleToolCalls { true })
+        edge(nodeSendToolResult forwardTo nodeProcessResult
+                onMultipleAssistantMessages { true }
+                transformed { it.joinToString("\n") { message -> message.content } }
+        )
 
         // Save analysis to memory before finish (but don't force finish)
         edge(nodeProcessResult forwardTo nodeSaveMemory)
@@ -70,7 +75,7 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
     }
 
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeGithubRequest() =
-    node<InitialPromptAnalysisModel.SuccessAnalysisModel, Message.Response>("github-process-user-request") { request ->
+    node<InitialPromptAnalysisModel.SuccessAnalysisModel, List<Message.Response>>("github-process-user-request") { request ->
         // Store original request for later use
         storage.set(originalRequestKey, request)
         request.requirements?.let { storage.set(requirementsKey, it) }
@@ -143,6 +148,8 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                         ${requirementsText}
                                         
                                         Proceed with gathering information about the repository systematically, with particular focus on addressing the structured requirements.
+
+                                        Try to call multiple tools per once if available to reduce token usage, especially for multiple files content
                                     """.trimIndent()
                 )
 
@@ -164,13 +171,14 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                         LLMCapability.Temperature,
                         LLMCapability.Completion,
                         LLMCapability.Tools,
-                        LLMCapability.OpenAIEndpoint.Completions
+                        LLMCapability.OpenAIEndpoint.Completions,
+                        LLMCapability.MultipleChoices,
 //                        LLMCapability.ToolChoice,
                     )
                 )
             }
 
-            requestLLM()
+            requestLLMMultiple()
         }
     }
 
@@ -438,12 +446,15 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
 
 private fun AIAgentSubgraphBuilderBase<*, *>.nodeExecuteTool(
     name: String? = null
-): AIAgentNodeDelegate<Message.Tool.Call, ReceivedToolResult> =
-    node(name) { toolCall ->
+): AIAgentNodeDelegate<List<Message.Tool.Call>, List<ReceivedToolResult>> =
+    node(name) { toolCalls ->
         val currentCalls = storage.get(toolCallsKey) ?: emptyList()
-        storage.set(toolCallsKey, currentCalls + "${toolCall.tool} ${toolCall.content}")
+        logger.info("Executing tools: ${toolCalls.joinToString { it.tool }}")
+        toolCalls.forEach { call ->
+            storage.set(toolCallsKey, currentCalls + "${call.tool} ${call.content}")
+        }
 
-        environment.executeTool(toolCall)
+        environment.executeTools(toolCalls)
     }
 
 // Load GitHub analysis from memory
