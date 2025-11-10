@@ -33,9 +33,36 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
         val nodeProcessResult by nodeProcessResult(fixingModel)
 
-        edge(nodeStart forwardTo nodeDockerRequest onCondition { it.dockerEnv != null })
+        // Check forceSkipDocker flag - if true, skip Docker build entirely
         edge(nodeStart forwardTo nodeFinish onCondition {
-            it.dockerEnv == null
+            val githubRequest = storage.get(initialGithubRequestKey)
+            githubRequest?.forceSkipDocker == true
+        } transformed { analysisResult ->
+            val toolCalls = storage.get(toolCallsKey).orEmpty()
+            val requirements = storage.get(requirementsKey)
+
+            logger.info("⏭️ Docker build skipped (forceSkipDocker = true)")
+
+            ToolChatResponse(
+                response = analysisResult.freeFormAnswer,
+                shortSummary = analysisResult.shortSummary,
+                toolCalls = toolCalls,
+                originalMessage = null,
+                tokenUsage = null,
+                repositoryReview = analysisResult.repositoryReview,
+                requirements = requirements,
+                userRequestAnalysis = analysisResult.userRequestAnalysis,
+                dockerInfo = null
+            )
+        } )
+
+        edge(nodeStart forwardTo nodeDockerRequest onCondition {
+            val githubRequest = storage.get(initialGithubRequestKey)
+            githubRequest?.forceSkipDocker == false && it.dockerEnv != null
+        })
+        edge(nodeStart forwardTo nodeFinish onCondition {
+            val githubRequest = storage.get(initialGithubRequestKey)
+            githubRequest?.forceSkipDocker == false && it.dockerEnv == null
         } transformed { analysisResult ->
             val toolCalls = storage.get(toolCallsKey).orEmpty()
             val requirements = storage.get(requirementsKey)

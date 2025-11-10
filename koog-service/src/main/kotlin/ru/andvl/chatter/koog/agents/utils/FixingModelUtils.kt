@@ -7,7 +7,11 @@ import ai.koog.prompt.llm.LLModel
 /**
  * Create fixing LLModel based on provider and model ID
  */
-fun createFixingModel(provider: String, modelId: String): LLModel {
+fun createFixingModel(
+    provider: String,
+    modelId: String,
+    fixingMaxContextTokens: Long = FIXING_MAX_CONTEXT_LENGTH
+): LLModel {
     val llmProvider = when (provider.uppercase()) {
         "OPEN_ROUTER", "OPENROUTER" -> LLMProvider.OpenRouter
         "OPENAI" -> LLMProvider.OpenAI
@@ -24,6 +28,6 @@ fun createFixingModel(provider: String, modelId: String): LLModel {
             LLMCapability.Completion,
             LLMCapability.OpenAIEndpoint.Completions,
         ),
-        contextLength = FIXING_MAX_CONTEXT_LENGTH,
+        contextLength = fixingMaxContextTokens,
     )
 }

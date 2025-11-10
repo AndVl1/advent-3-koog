@@ -1,0 +1,99 @@
+name: MCP Servers Build
+
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - 'mcp/**'
+      - 'gradle/**'
+      - 'build.gradle.kts'
+      - '.github/workflows/mcp-servers.yml'
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'mcp/**'
+      - 'gradle/**'
+      - 'build.gradle.kts'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build all MCP servers in parallel
+  build-mcp:
+    name: Build MCP - ${{ matrix.server }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        server:
+          - github
+          - googledocs
+          - telegraph
+          - test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Shadow JAR
+        run: ./gradlew :mcp:${{ matrix.server }}:shadowJar --no-daemon
+
+      - name: Verify Shadow JAR
+        run: |
+          JAR_DIR="mcp/${{ matrix.server }}/build/libs"
+          JAR_FILE=$(ls "$JAR_DIR"/*.jar 2>/dev/null | head -1)
+
+          if [ -n "$JAR_FILE" ] && [ -f "$JAR_FILE" ]; then
+            echo "✅ Shadow JAR created: $JAR_FILE"
+            ls -lh "$JAR_FILE"
+            echo "Size: $(du -h "$JAR_FILE" | cut -f1)"
+          else
+            echo "❌ No JAR files found in $JAR_DIR"
+            ls -la "$JAR_DIR" || echo "Directory not found"
+            exit 1
+          fi
+
+      - name: Upload build artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-${{ matrix.server }}-build-logs
+          path: |
+            mcp/${{ matrix.server }}/build/reports/
+            mcp/${{ matrix.server }}/build/test-results/
+          retention-days: 7
+
+  # Summary job
+  mcp-summary:
+    name: MCP Build Summary
+    runs-on: ubuntu-latest
+    needs: [build-mcp]
+    if: always()
+
+    steps:
+      - name: Check build results
+        run: |
+          echo "MCP Servers Build Summary:"
+          echo "========================="
+          echo "Status: ${{ needs.build-mcp.result }}"
+
+          if [ "${{ needs.build-mcp.result }}" != "success" ]; then
+            echo "❌ One or more MCP server builds failed"
+            exit 1
+          else
+            echo "✅ All MCP servers built successfully"
+          fi

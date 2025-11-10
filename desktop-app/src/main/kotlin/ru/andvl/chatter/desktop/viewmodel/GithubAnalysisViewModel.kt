@@ -35,10 +35,13 @@ class GithubAnalysisViewModel(
             is GithubAnalysisAction.SelectModel -> handleSelectModel(action.model)
             is GithubAnalysisAction.UpdateCustomBaseUrl -> handleUpdateCustomBaseUrl(action.url)
             is GithubAnalysisAction.UpdateCustomModel -> handleUpdateCustomModel(action.model)
+            is GithubAnalysisAction.UpdateCustomMaxContextTokens -> handleUpdateCustomMaxContextTokens(action.maxContextTokens)
+            is GithubAnalysisAction.UpdateCustomFixingMaxContextTokens -> handleUpdateCustomFixingMaxContextTokens(action.fixingMaxContextTokens)
             is GithubAnalysisAction.ToggleUseMainModelForFixing -> handleToggleUseMainModelForFixing(action.useMain)
             is GithubAnalysisAction.SelectFixingModel -> handleSelectFixingModel(action.model)
             is GithubAnalysisAction.ToggleAttachGoogleSheets -> handleToggleAttachGoogleSheets(action.attach)
             is GithubAnalysisAction.UpdateGoogleSheetsUrl -> handleUpdateGoogleSheetsUrl(action.url)
+            is GithubAnalysisAction.ToggleForceSkipDocker -> handleToggleForceSkipDocker(action.forceSkip)
             is GithubAnalysisAction.StartAnalysis -> handleStartAnalysis()
             is GithubAnalysisAction.ClearError -> handleClearError()
             is GithubAnalysisAction.ClearResult -> handleClearResult()
@@ -74,6 +77,14 @@ class GithubAnalysisViewModel(
         _state.update { it.copy(customModel = model) }
     }
 
+    private fun handleUpdateCustomMaxContextTokens(maxContextTokens: Long) {
+        _state.update { it.copy(customMaxContextTokens = maxContextTokens) }
+    }
+
+    private fun handleUpdateCustomFixingMaxContextTokens(fixingMaxContextTokens: Long) {
+        _state.update { it.copy(customFixingMaxContextTokens = fixingMaxContextTokens) }
+    }
+
     private fun handleToggleUseMainModelForFixing(useMain: Boolean) {
         _state.update { it.copy(useMainModelForFixing = useMain) }
     }
@@ -90,6 +101,10 @@ class GithubAnalysisViewModel(
         _state.update { it.copy(googleSheetsUrl = url) }
     }
 
+    private fun handleToggleForceSkipDocker(forceSkip: Boolean) {
+        _state.update { it.copy(forceSkipDocker = forceSkip) }
+    }
+
     private fun handleStartAnalysis() {
         viewModelScope.launch {
             _state.update {
@@ -101,33 +116,57 @@ class GithubAnalysisViewModel(
             }
 
             val currentState = _state.value
+
+            // Determine main model ID
+            val mainModelId = if (currentState.llmProvider == LLMProvider.CUSTOM) {
+                currentState.customModel
+            } else {
+                currentState.selectedModel
+            }
+
+            // Determine fixing model ID
+            val fixingModelId = if (currentState.useMainModelForFixing) {
+                mainModelId
+            } else {
+                currentState.fixingModel
+            }
+
+            // Get max context tokens
+            val maxContextTokens = if (currentState.llmProvider == LLMProvider.CUSTOM) {
+                currentState.customMaxContextTokens
+            } else {
+                currentState.llmProvider.getMaxContextTokens(mainModelId)
+            }
+
+            // Get fixing max context tokens
+            val fixingMaxContextTokens = if (currentState.llmProvider == LLMProvider.CUSTOM) {
+                if (currentState.useMainModelForFixing) {
+                    currentState.customMaxContextTokens
+                } else {
+                    currentState.customFixingMaxContextTokens
+                }
+            } else {
+                currentState.llmProvider.getMaxContextTokens(fixingModelId)
+            }
+
             val config = AnalysisConfig(
                 userInput = currentState.userInput,
                 apiKey = currentState.apiKey,
                 llmProvider = currentState.llmProvider,
-                selectedModel = if (currentState.llmProvider == LLMProvider.CUSTOM) {
-                    currentState.customModel
-                } else {
-                    currentState.selectedModel
-                },
+                selectedModel = mainModelId,
                 customBaseUrl = if (currentState.llmProvider == LLMProvider.CUSTOM) {
                     currentState.customBaseUrl
                 } else null,
                 customModel = if (currentState.llmProvider == LLMProvider.CUSTOM) {
                     currentState.customModel
                 } else null,
+                maxContextTokens = maxContextTokens,
+                fixingMaxContextTokens = fixingMaxContextTokens,
                 useMainModelForFixing = currentState.useMainModelForFixing,
-                fixingModel = if (currentState.useMainModelForFixing) {
-                    if (currentState.llmProvider == LLMProvider.CUSTOM) {
-                        currentState.customModel
-                    } else {
-                        currentState.selectedModel
-                    }
-                } else {
-                    currentState.fixingModel
-                },
+                fixingModel = fixingModelId,
                 attachGoogleSheets = currentState.attachGoogleSheets,
-                googleSheetsUrl = if (currentState.attachGoogleSheets) currentState.googleSheetsUrl else ""
+                googleSheetsUrl = if (currentState.attachGoogleSheets) currentState.googleSheetsUrl else "",
+                forceSkipDocker = currentState.forceSkipDocker
             )
 
             val result = interactor.analyzeRepository(config)

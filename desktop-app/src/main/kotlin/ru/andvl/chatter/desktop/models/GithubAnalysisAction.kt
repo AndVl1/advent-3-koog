@@ -35,6 +35,16 @@ sealed interface GithubAnalysisAction {
     data class UpdateCustomModel(val model: String) : GithubAnalysisAction
 
     /**
+     * User changed custom max context tokens (for Custom provider)
+     */
+    data class UpdateCustomMaxContextTokens(val maxContextTokens: Long) : GithubAnalysisAction
+
+    /**
+     * User changed custom fixing max context tokens (for Custom provider)
+     */
+    data class UpdateCustomFixingMaxContextTokens(val fixingMaxContextTokens: Long) : GithubAnalysisAction
+
+    /**
      * Toggle between using main model or separate model for fixing
      */
     data class ToggleUseMainModelForFixing(val useMain: Boolean) : GithubAnalysisAction
@@ -53,6 +63,11 @@ sealed interface GithubAnalysisAction {
      * User changed Google Sheets URL
      */
     data class UpdateGoogleSheetsUrl(val url: String) : GithubAnalysisAction
+
+    /**
+     * Toggle force skip Docker build
+     */
+    data class ToggleForceSkipDocker(val forceSkip: Boolean) : GithubAnalysisAction
 
     /**
      * User clicked "Analyze" button

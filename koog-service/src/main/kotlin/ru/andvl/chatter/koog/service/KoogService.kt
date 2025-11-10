@@ -241,7 +241,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     LLMCapability.Tools,
                     LLMCapability.OpenAIEndpoint.Completions
                 ),
-                contextLength = 100_000,
+                contextLength = llmConfig.maxContextTokens,
             )
 
             val systemPrompt = buildGithubSystemPrompt()
@@ -260,7 +260,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             // Create fixing model for error correction
             val fixingModel = createFixingModel(
                 provider = llmConfig.provider,
-                modelId = llmConfig.fixingModel ?: llmConfig.model
+                modelId = llmConfig.fixingModel ?: llmConfig.model,
+                fixingMaxContextTokens = llmConfig.fixingMaxContextTokens
             )
 
             val strategy = getGithubAnalysisStrategy(fixingModel)
@@ -292,7 +293,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 message = request.userMessage,
                 systemPrompt = systemPrompt,
                 history = ChatHistory(),
-                googleSheetsUrl = request.googleSheetsUrl
+                googleSheetsUrl = request.googleSheetsUrl,
+                forceSkipDocker = request.forceSkipDocker
             )
 
             try {

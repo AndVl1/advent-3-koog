@@ -10,6 +10,7 @@ internal class GithubChatRequest(
     val systemPrompt: String? = null,
     val history: ChatHistory,
     val googleSheetsUrl: String? = null,
+    val forceSkipDocker: Boolean = true,
 )
 
 internal data class ToolChatResponse(
