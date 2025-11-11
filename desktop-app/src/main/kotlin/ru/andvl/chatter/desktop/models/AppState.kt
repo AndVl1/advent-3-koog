@@ -23,6 +23,8 @@ data class AppState(
     val googleSheetsUrl: String = "",
     // Docker integration
     val forceSkipDocker: Boolean = true,
+    // Embeddings integration
+    val enableEmbeddings: Boolean = false,
     val isLoading: Boolean = false,
     val analysisResult: GithubAnalysisResponse? = null,
     val error: String? = null
@@ -109,5 +111,6 @@ data class AnalysisConfig(
     val fixingModel: String,
     val attachGoogleSheets: Boolean = false,
     val googleSheetsUrl: String = "",
-    val forceSkipDocker: Boolean = true
+    val forceSkipDocker: Boolean = true,
+    val enableEmbeddings: Boolean = false
 )

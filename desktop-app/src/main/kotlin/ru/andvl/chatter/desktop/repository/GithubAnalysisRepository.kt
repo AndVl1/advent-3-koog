@@ -7,6 +7,7 @@ import ai.koog.prompt.executor.clients.google.GoogleLLMClient
 import ai.koog.prompt.executor.clients.openrouter.OpenRouterClientSettings
 import ai.koog.prompt.executor.clients.openrouter.OpenRouterLLMClient
 import ai.koog.prompt.executor.clients.retry.RetryConfig
+import ai.koog.prompt.executor.clients.retry.RetryablePattern
 import ai.koog.prompt.executor.clients.retry.RetryingLLMClient
 import ai.koog.prompt.executor.llms.SingleLLMPromptExecutor
 import ai.koog.prompt.executor.model.PromptExecutor
@@ -41,7 +42,8 @@ class GithubAnalysisRepository {
                     googleSheetsUrl = if (config.attachGoogleSheets && config.googleSheetsUrl.isNotBlank()) {
                         config.googleSheetsUrl
                     } else null,
-                    forceSkipDocker = config.forceSkipDocker
+                    forceSkipDocker = config.forceSkipDocker,
+                    enableEmbeddings = config.enableEmbeddings
                 )
 
                 val llmConfig = LLMConfig(
@@ -98,6 +100,7 @@ class GithubAnalysisRepository {
             config = RetryConfig.CONSERVATIVE.copy(
                 retryablePatterns = buildList {
                     addAll(RetryConfig.DEFAULT_PATTERNS)
+                    add(RetryablePattern.Regex(Regex("Field \'.*\' is required for.*")))
                 }
             )
         )

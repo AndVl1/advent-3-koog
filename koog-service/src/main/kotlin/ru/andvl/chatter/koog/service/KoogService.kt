@@ -27,6 +27,7 @@ import ru.andvl.chatter.koog.agents.memory.githubMemoryProvider
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
 import ru.andvl.chatter.koog.agents.utils.createFixingModel
+import ru.andvl.chatter.koog.embeddings.model.EmbeddingConfig
 import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.common.TokenUsage
 import ru.andvl.chatter.koog.model.structured.ChatRequest
@@ -35,6 +36,7 @@ import ru.andvl.chatter.koog.model.structured.StructuredResponse
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
 import ru.andvl.chatter.shared.models.ChatHistory
 import ru.andvl.chatter.shared.models.github.*
+import java.io.File
 
 /**
  * Koog service - independent service for LLM interaction with context support
@@ -264,7 +266,15 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 fixingMaxContextTokens = llmConfig.fixingMaxContextTokens
             )
 
-            val strategy = getGithubAnalysisStrategy(fixingModel)
+            // Configure embeddings
+            val embeddingConfig = EmbeddingConfig(
+                enabled = request.enableEmbeddings,
+                ollamaBaseUrl = "http://localhost:11434",
+                modelName = "zylonai/multilingual-e5-large"
+            )
+            val embeddingStorageDir = File("./rag/embeddings")
+
+            val strategy = getGithubAnalysisStrategy(fixingModel, embeddingConfig, embeddingStorageDir)
 
             val agent = AIAgent(
                 promptExecutor = promptExecutor,

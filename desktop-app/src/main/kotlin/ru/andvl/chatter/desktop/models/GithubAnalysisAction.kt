@@ -70,6 +70,11 @@ sealed interface GithubAnalysisAction {
     data class ToggleForceSkipDocker(val forceSkip: Boolean) : GithubAnalysisAction
 
     /**
+     * Toggle embeddings generation
+     */
+    data class ToggleEnableEmbeddings(val enable: Boolean) : GithubAnalysisAction
+
+    /**
      * User clicked "Analyze" button
      */
     data object StartAnalysis : GithubAnalysisAction

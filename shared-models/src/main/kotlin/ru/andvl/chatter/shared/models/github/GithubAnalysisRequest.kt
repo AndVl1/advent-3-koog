@@ -10,5 +10,7 @@ data class GithubAnalysisRequest(
     @SerialName("google_sheets_url")
     val googleSheetsUrl: String? = null,
     @SerialName("force_skip_docker")
-    val forceSkipDocker: Boolean = true
+    val forceSkipDocker: Boolean = true,
+    @SerialName("enable_embeddings")
+    val enableEmbeddings: Boolean = false
 )
