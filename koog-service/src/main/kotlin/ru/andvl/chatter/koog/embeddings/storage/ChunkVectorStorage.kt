@@ -1,14 +1,18 @@
 package ru.andvl.chatter.koog.embeddings.storage
 
+import ai.koog.embeddings.local.LLMEmbedder
+import ai.koog.embeddings.local.OllamaEmbeddingModels
+import ai.koog.prompt.executor.ollama.client.OllamaClient
 import ai.koog.rag.base.mostRelevantDocuments
 import ai.koog.rag.vector.FileDocumentEmbeddingStorage
+import ai.koog.rag.vector.TextDocumentEmbedder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.embeddings.chunking.ChunkingStrategyFactory
+import ru.andvl.chatter.koog.embeddings.metrics.RAGMetrics
 import ru.andvl.chatter.koog.embeddings.model.DocumentChunk
 import ru.andvl.chatter.koog.embeddings.model.EmbeddingConfig
-import ru.andvl.chatter.koog.embeddings.service.EmbeddingService
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.*
@@ -19,26 +23,35 @@ private val logger = LoggerFactory.getLogger("chunk-vector-storage")
  * Vector storage for document chunks using Koog's EmbeddingBasedDocumentStorage
  * Combines custom code-aware chunking with Koog's RAG infrastructure
  *
- * Uses:
- * - Custom ChunkDocumentEmbedder for embedding generation
- * - JVMFileVectorStorage for persistent storage
- * - EmbeddingBasedDocumentStorage for ranking and retrieval
+ * Uses Koog components:
+ * - OllamaClient for LLM embedding provider
+ * - LLMEmbedder for base embedding functionality
+ * - TextDocumentEmbedder for document-level embedding
+ * - FileDocumentEmbeddingStorage for persistent storage
+ * - JVMFileVectorStorage for vector operations
  */
 internal class ChunkVectorStorage(
     private val storageRoot: Path,
-    private val config: EmbeddingConfig,
-    private val embeddingService: EmbeddingService
+    private val config: EmbeddingConfig
 ) {
-    private val chunkEmbedder = ChunkDocumentEmbedder(embeddingService)
+    private val ollamaClient = OllamaClient(baseUrl = config.ollamaBaseUrl)
+    private val llmEmbedder = LLMEmbedder(ollamaClient, OllamaEmbeddingModels.MULTILINGUAL_E5)
     private val chunkProvider = ChunkDocumentProvider()
+    private val chunkEmbedder = TextDocumentEmbedder(chunkProvider, llmEmbedder)
 
-    // Use Koog's EmbeddingBasedDocumentStorage for automatic ranking
-    private val documentStorage = FileDocumentEmbeddingStorage(
-        embedder = chunkEmbedder,
-        documentProvider = chunkProvider,
-        fs = ai.koog.rag.base.files.JVMFileSystemProvider.ReadWrite,
-        root = storageRoot
-    )
+    /**
+     * Get document storage for a specific repository
+     * Each repository has its own isolated storage directory
+     */
+    private fun getRepositoryStorage(repositoryName: String): FileDocumentEmbeddingStorage<DocumentChunk, Path> {
+        val repoRoot = storageRoot.resolve(sanitizeRepositoryName(repositoryName))
+        return FileDocumentEmbeddingStorage(
+            embedder = chunkEmbedder,
+            documentProvider = chunkProvider,
+            fs = ai.koog.rag.base.files.JVMFileSystemProvider.ReadWrite,
+            root = repoRoot
+        )
+    }
 
     /**
      * Index a repository by chunking files and storing embeddings
@@ -46,6 +59,9 @@ internal class ChunkVectorStorage(
     suspend fun indexRepository(repositoryPath: Path, repositoryName: String): IndexingResult = withContext(Dispatchers.IO) {
         try {
             logger.info("📊 Starting indexing for repository: $repositoryName")
+
+            // Get repository-specific storage
+            val repoStorage = getRepositoryStorage(repositoryName)
 
             val eligibleFiles = findEligibleFiles(repositoryPath)
             logger.info("📄 Found ${eligibleFiles.size} eligible files")
@@ -92,8 +108,9 @@ internal class ChunkVectorStorage(
                             break
                         }
 
-                        // Store chunk (embeddings are generated automatically by documentStorage)
-                        storeChunk(chunk, repositoryName)
+                        // Store chunk using repository-specific storage
+                        // Koog will handle everything: embedding generation + storage
+                        repoStorage.store(chunk)
                         chunksIndexed++
                     }
 
@@ -124,7 +141,7 @@ internal class ChunkVectorStorage(
 
     /**
      * Search for similar chunks using semantic search
-     * Uses Koog's mostRelevantDocuments() with similarity threshold
+     * Uses repository-specific storage for automatic isolation
      */
     suspend fun searchSimilarChunks(
         query: String,
@@ -133,12 +150,25 @@ internal class ChunkVectorStorage(
         similarityThreshold: Double = 0.3  // Filter out chunks with similarity < 0.3
     ): List<ChunkSearchResult> = withContext(Dispatchers.IO) {
         try {
+            // Get repository-specific storage
+            // This automatically isolates search to only this repository's chunks
+            val repoStorage = getRepositoryStorage(repositoryName)
+
             // Use Koog's mostRelevantDocuments extension with automatic ranking and filtering
-            val relevantChunks = documentStorage
+            logger.info("Query: $query")
+            val relevantChunks = repoStorage
                 .mostRelevantDocuments(query, count = topK, similarityThreshold = similarityThreshold)
                 .toList()
 
-            logger.debug("Found ${relevantChunks.size} relevant chunks (threshold: $similarityThreshold)")
+            // Record metrics
+            RAGMetrics.recordSearch(
+                repositoryName = repositoryName,
+                requested = topK,
+                returned = relevantChunks,
+                filteredFrom = relevantChunks.size  // No filtering needed - storage is already isolated
+            )
+
+            logger.debug("Found ${relevantChunks.size} relevant chunks in repository '$repositoryName' (threshold: $similarityThreshold)")
 
             // Convert to ChunkSearchResult
             relevantChunks.mapIndexed { index, chunk ->
@@ -149,7 +179,7 @@ internal class ChunkVectorStorage(
                 )
             }
         } catch (e: Exception) {
-            logger.error("Failed to search chunks: ${e.message}", e)
+            logger.error("Failed to search chunks in repository '$repositoryName': ${e.message}", e)
             emptyList()
         }
     }
@@ -160,40 +190,9 @@ internal class ChunkVectorStorage(
      */
     suspend fun isRepositoryIndexed(repositoryName: String): Boolean = withContext(Dispatchers.IO) {
         val repoDir = storageRoot.resolve(sanitizeRepositoryName(repositoryName))
-        repoDir.exists() && repoDir.isDirectory()
-    }
-
-    private suspend fun storeChunk(chunk: DocumentChunk, repositoryName: String) {
-        // Create chunk file with metadata
-        createChunkFile(chunk, repositoryName)
-
-        // Store using EmbeddingBasedDocumentStorage
-        // It will automatically generate embeddings and store them
-        documentStorage.store(chunk)
-    }
-
-    private fun createChunkFile(chunk: DocumentChunk, repositoryName: String): Path {
-        val repoDir = storageRoot.resolve(sanitizeRepositoryName(repositoryName))
-        repoDir.createDirectories()
-
-        // Create chunk file with metadata
-        val chunkFileName = "${chunk.id}.chunk"
-        val chunkFile = repoDir.resolve(chunkFileName)
-
-        // Write chunk metadata and content
-        val chunkData = """
-            |FILE: ${chunk.metadata.filePath}
-            |TYPE: ${chunk.metadata.chunkType}
-            |LINES: ${chunk.startLine}-${chunk.endLine}
-            |LANGUAGE: ${chunk.metadata.language ?: "unknown"}
-            |FUNCTION: ${chunk.metadata.functionName ?: "N/A"}
-            |CLASS: ${chunk.metadata.className ?: "N/A"}
-            |---
-            |${chunk.content}
-        """.trimMargin()
-
-        chunkFile.writeText(chunkData)
-        return chunkFile
+        // Check for "documents" subdirectory that Koog creates
+        val documentsDir = repoDir.resolve("documents")
+        documentsDir.exists() && documentsDir.isDirectory()
     }
 
     private fun findEligibleFiles(rootPath: Path): List<Path> {

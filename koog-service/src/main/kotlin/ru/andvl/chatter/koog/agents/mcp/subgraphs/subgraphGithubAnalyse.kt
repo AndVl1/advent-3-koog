@@ -11,6 +11,7 @@ import ai.koog.agents.core.environment.ReceivedToolResult
 import ai.koog.agents.memory.config.MemoryScopeType
 import ai.koog.agents.memory.feature.withMemory
 import ai.koog.prompt.llm.LLMCapability
+import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
@@ -18,6 +19,7 @@ import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
 import ru.andvl.chatter.koog.agents.memory.*
 import ru.andvl.chatter.koog.agents.utils.FixedWholeHistoryCompressionStrategy
 import ru.andvl.chatter.koog.agents.utils.isHistoryTooLong
+import ru.andvl.chatter.koog.embeddings.metrics.RAGMetrics
 import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.docker.DockerEnvModel
 import ru.andvl.chatter.koog.model.tool.*
@@ -29,14 +31,14 @@ private val logger = LoggerFactory.getLogger("mcp")
 
 
 internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGithubAnalyze(
-    fixingModel: ai.koog.prompt.llm.LLModel
+    fixingModel: LLModel,
 ): AIAgentSubgraphDelegate<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel> =
     subgraph(
         name = "github-analysis",
-        tools = McpProvider.getGithubToolsRegistry().tools
-//        toolSelectionStrategy = ai.koog.agents.core.agent.entity.ToolSelectionStrategy.Tools(
-//            McpProvider.getGithubToolsDescriptors() + McpProvider.getUtilsToolsDescriptors()
-//        )
+        tools = buildList {
+            addAll(McpProvider.getGithubToolsRegistry().tools)
+            addAll(McpProvider.getRagToolsRegistry().tools)
+        }
     ) {
         val nodeLoadMemory by nodeLoadGithubMemory()
         val nodeGithubRequest by nodeGithubRequest()
@@ -80,26 +82,24 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
         storage.set(originalRequestKey, request)
         request.requirements?.let { storage.set(requirementsKey, it) }
 
-        // RAG: Get relevant context from indexed repository
+        // RAG: Populate context for RAG tool
         val ragService = storage.get(ragServiceKey)
         val embeddingConfig = storage.get(embeddingConfigKey)
         val repositoryName = request.githubRepo.substringAfterLast("/").removeSuffix(".git")
 
-        val ragContext = if (ragService != null && embeddingConfig != null) {
-            logger.info("🔍 Searching RAG index for relevant context (top ${embeddingConfig.retrievalChunks} chunks)")
-            ragService.getRelevantContext(
-                query = request.userRequest,
-                repositoryName = repositoryName,
-                maxChunks = embeddingConfig.retrievalChunks,
-                similarityThreshold = embeddingConfig.similarityThreshold
-            )
+        val ragAvailable = ragService != null && embeddingConfig != null
+        RAGMetrics.recordRAGAvailability(ragAvailable)
+
+        // Populate RAG tool context so it can access current repository
+        ru.andvl.chatter.koog.tools.RagToolContext.ragService = ragService
+        ru.andvl.chatter.koog.tools.RagToolContext.repositoryName = repositoryName
+        ru.andvl.chatter.koog.tools.RagToolContext.config = embeddingConfig ?: ru.andvl.chatter.koog.embeddings.model.EmbeddingConfig()
+
+        if (ragAvailable) {
+            logger.info("📊 RAG available for repository: '$repositoryName'")
+            logger.info("🔍 LLM can use 'search-code-semantically' tool for semantic code search")
         } else {
-            logger.debug("RAG service not available, skipping semantic search")
-            ru.andvl.chatter.koog.embeddings.rag.RAGContext(
-                available = false,
-                chunks = emptyList(),
-                formattedContext = ""
-            )
+            logger.debug("RAG service not available")
         }
 
         llm.writeSession {
@@ -122,16 +122,32 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                         """.trimIndent()
                 } ?: ""
 
-                val ragContextText = if (ragContext.available && ragContext.formattedContext.isNotEmpty()) {
+                val ragToolHint = if (ragAvailable) {
                     """
 
-                    **📚 PRE-INDEXED CODE CONTEXT (from semantic search):**
-                    The repository has been pre-indexed. Here is the most relevant code based on the user's request:
+                    **🔍 SEMANTIC CODE SEARCH AVAILABLE:**
+                    This repository has been pre-indexed for semantic search! You have access to a special tool:
 
-                    ${ragContext.formattedContext}
+                    **Tool: `search-code-semantically`**
+                    - **When to use**: When you need to find specific implementations, patterns, or code examples
+                    - **How it works**: Searches code by meaning, not just keywords
+                    - **Input**: Natural language description (e.g., "authentication logic", "database connection setup")
+                    - **Output**: Most relevant code chunks with file paths, line numbers, and full content
+                    - **Advantage**: Much faster than fetching files one by one with MCP tools
 
-                    **IMPORTANT**: Use this context as a starting point. These are the most relevant parts found through semantic search.
-                    You can still use MCP tools to get additional information if needed, but prioritize this pre-loaded context.
+                    **💡 BEST PRACTICES:**
+                    1. ✅ **Use semantic search FIRST** when looking for specific code patterns or implementations
+                    2. ✅ **Multiple searches** - you can call this tool multiple times with different queries
+                    3. ✅ **Then use MCP tools** for repository metadata (README, package.json, etc.) if needed
+                    4. ✅ **Example queries**:
+                       - "main activity or entry point"
+                       - "network request handling"
+                       - "UI components and screens"
+                       - "error handling and logging"
+
+                    **⚡ EFFICIENCY TIP:**
+                    - Use semantic search to find relevant code → reduces number of MCP tool calls significantly
+                    - Aim for 3-5 semantic searches + 3-5 MCP calls = ~10 total tool calls maximum
                     """.trimIndent()
                 } else {
                     ""
@@ -139,12 +155,12 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
 
                 system(
                     """
-                                        You are a GitHub repository analysis expert with access to GitHub API tools.
+                                        You are a GitHub repository analysis expert with access to GitHub API tools and semantic code search.
 
                                         Your task is to thoroughly analyze the requested GitHub repository and gather comprehensive information to answer the user's specific questions, with special focus on structured requirements provided.
 
-                                        ${ragContextText}
-                                        
+                                        $ragToolHint
+
                                         **IMPORTANT LANGUAGE REQUIREMENT:**
                                         - Detect the language of the original user request and requirements
                                         - Gather information systematically but prepare for final response in the SAME language as the original request
@@ -176,16 +192,17 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                         7. Focus on specific aspects mentioned in the user's request
                                         
                                         **Important:**
-                                        - Use multiple tool calls to gather comprehensive information
+                                        - **If semantic search is available, USE IT FIRST** to find relevant code before using MCP tools
+                                        - Use semantic search for finding implementations, patterns, and code examples
+                                        - Use MCP tools for repository metadata (README, dependencies, etc.)
                                         - Be systematic in your approach
-                                        - Collect relevant code snippets when analyzing technical aspects
                                         - Pay special attention to structured requirements provided below
                                         - For each requirement point, try to find specific file references and line numbers
                                         - Document any problems, advantages, or OK status for each requirement
-                                        - Try to use no more then 15 tool calls (increased for thorough requirements analysis)
+                                        - **Aim for 8-12 tool calls maximum** (3-5 semantic searches + 3-7 MCP calls)
                                         
                                         ${requirementsText}
-                                        
+
                                         Proceed with gathering information about the repository systematically, with particular focus on addressing the structured requirements.
 
                                         Try to call multiple tools per once if available to reduce token usage, especially for multiple files content
@@ -195,12 +212,15 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                 user(
                     """
                                         Please analyze the GitHub repository: ${request.githubRepo}
-                                        
+
                                         User's specific request: ${request.userRequest}
-                                        
+
                                         **LANGUAGE NOTE:** The final analysis report should be written in the same language as the user's original request above.
-                                        
-                                        Use the available GitHub tools to collect comprehensive information and focus on answering the user's specific questions.
+
+                                        **TOOL USAGE STRATEGY:**
+                                        1. Start with semantic search (if available) to find relevant code
+                                        2. Use MCP tools for metadata (README, package.json, etc.)
+                                        3. Focus on answering the user's specific questions efficiently
                                     """.trimIndent()
                 )
 
@@ -222,7 +242,7 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
     }
 
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeProcessResult(
-    fixingModel: ai.koog.prompt.llm.LLModel
+    fixingModel: LLModel
 ) =
     node<String, GithubRepositoryAnalysisModel.SuccessAnalysisModel>("github-process-llm-result") { rawAnalysisData ->
         val originalRequest = storage.get(originalRequestKey)
@@ -471,6 +491,9 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                     logger.info("Final response: $it")
                 }
 
+                // Log RAG metrics after analysis is complete
+                RAGMetrics.logSummary()
+
                 when (val structure = resp.structure) {
                     is GithubRepositoryAnalysisModel.FailedAnalysisModel -> {
                         throw IllegalStateException("GitHub analysis failed: ${structure.reason}")
@@ -492,6 +515,10 @@ private fun AIAgentSubgraphBuilderBase<*, *>.nodeExecuteTool(
         toolCalls.forEach { call ->
             storage.set(toolCallsKey, currentCalls + "${call.tool} ${call.content}")
         }
+
+        // Record MCP tool calls for metrics
+        val ragWasAvailable = storage.get(ragServiceKey) != null && storage.get(embeddingConfigKey) != null
+        RAGMetrics.recordMCPToolCalls(toolCalls.size, ragWasAvailable)
 
         environment.executeTools(toolCalls)
     }

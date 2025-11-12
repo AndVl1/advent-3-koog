@@ -46,7 +46,9 @@ internal suspend fun getGithubAnalysisStrategy(
     strategy("github-analysis-agent") {
         val initialRequestNode by subgraphGithubLLMRequest(fixingModel)
         val ragIndexingSubgraph by subgraphRAGIndexing(embeddingConfig, embeddingStorageDir.toPath())
+
         val githubAnalysisSubgraph by subgraphGithubAnalyze(fixingModel)
+
         val nodeCompressHistory by nodeLLMCompressHistory<GithubRepositoryAnalysisModel.SuccessAnalysisModel>("github-strategy-intermediate-compress")
         val dockerSubgraph by subgraphDocker(fixingModel)
         val googleSheetsSubgraph by subgraphGoogleSheets()
