@@ -225,6 +225,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 .plus(McpProvider.getGoogleDocsToolsRegistry())
                 .plus(McpProvider.getDockerToolsRegistry())
                 .plus(McpProvider.getUtilsToolsRegistry())
+                .plus(McpProvider.getRagToolsRegistry())
             //  Map provider string to LLMProvider enum
             val llmProvider = when (llmConfig.provider.uppercase()) {
                 "OPEN_ROUTER", "OPENROUTER" -> LLMProvider.OpenRouter

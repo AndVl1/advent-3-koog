@@ -16,6 +16,11 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.coroutines.core)
 
+    // RAG dependencies
+    implementation(libs.koog.embeddings.llm)
+    implementation(libs.koog.vector.storage)
+    implementation(libs.koog.prompt.executor.ollama)
+
     // Logging
     implementation(libs.logback.classic)
 

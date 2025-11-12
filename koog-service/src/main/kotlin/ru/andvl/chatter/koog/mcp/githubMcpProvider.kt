@@ -15,6 +15,7 @@ import kotlinx.io.asSource
 import kotlinx.io.buffered
 import ru.andvl.chatter.koog.tools.CurrentTimeToolSet
 import ru.andvl.chatter.koog.tools.DockerToolSet
+import ru.andvl.chatter.koog.tools.RagToolSet
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -87,6 +88,18 @@ object McpProvider {
 
     fun getUtilsToolsDescriptors(): List<ToolDescriptor> {
         return getUtilsToolsRegistry()
+            .tools
+            .map { it.descriptor }
+    }
+
+    internal fun getRagToolsRegistry(): ToolRegistry {
+        return ToolRegistry {
+            tools(RagToolSet())
+        }
+    }
+
+    internal fun getRagToolsDescriptors(): List<ToolDescriptor> {
+        return getRagToolsRegistry()
             .tools
             .map { it.descriptor }
     }

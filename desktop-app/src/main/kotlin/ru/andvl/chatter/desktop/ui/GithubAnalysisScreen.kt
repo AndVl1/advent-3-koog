@@ -28,11 +28,14 @@ fun GithubAnalysisScreen(
     var saveMessage by remember { mutableStateOf<String?>(null) }
     val clipboardManager = LocalClipboardManager.current
 
+    Scaffold {
+
+    }
     LazyColumn(
         modifier = modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(24.dp)
     ) {
         // Header
         item("header") {

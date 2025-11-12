@@ -1,8 +1,10 @@
 package ru.andvl.chatter.koog.embeddings.rag
 
+import ai.koog.prompt.executor.ollama.client.OllamaClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.embeddings.model.EmbeddingConfig
-import ru.andvl.chatter.koog.embeddings.service.EmbeddingService
 import ru.andvl.chatter.koog.embeddings.storage.ChunkVectorStorage
 import java.nio.file.Path
 
@@ -11,12 +13,12 @@ private val logger = LoggerFactory.getLogger("rag-service")
 /**
  * RAG (Retrieval-Augmented Generation) service
  * Provides semantic search over indexed repositories
+ * Uses Koog's OllamaClient for LLM-based embeddings
  */
 internal class RAGService(
     private val storageRoot: Path,
     private val config: EmbeddingConfig
 ) {
-    private var embeddingService: EmbeddingService? = null
     private var vectorStorage: ChunkVectorStorage? = null
     private var isInitialized = false
 
@@ -32,22 +34,32 @@ internal class RAGService(
         }
 
         return try {
-            val service = EmbeddingService(config)
-            val available = service.checkAvailability()
+            // Test Ollama availability
+            val testClient = OllamaClient(baseUrl = config.ollamaBaseUrl)
+            val available = checkOllamaAvailability(testClient)
 
             if (available) {
-                embeddingService = service
-                vectorStorage = ChunkVectorStorage(storageRoot, config, service)
+                vectorStorage = ChunkVectorStorage(storageRoot, config)
                 isInitialized = true
-                logger.info("✅ RAG service initialized")
+                logger.info("✅ RAG service initialized with OllamaClient")
                 true
             } else {
-                logger.warn("⚠️ RAG service unavailable: Ollama not accessible")
-                service.close()
+                logger.warn("⚠️ RAG service unavailable: Ollama not accessible at ${config.ollamaBaseUrl}")
                 false
             }
         } catch (e: Exception) {
             logger.error("Failed to initialize RAG service", e)
+            false
+        }
+    }
+
+    private suspend fun checkOllamaAvailability(client: OllamaClient): Boolean = withContext(Dispatchers.IO) {
+        try {
+            // Try to get models to check if Ollama is running
+            client.getModels()
+            true
+        } catch (e: Exception) {
+            logger.debug("Ollama availability check failed: ${e.message}")
             false
         }
     }
@@ -128,7 +140,7 @@ internal class RAGService(
             appendLine("## 📚 Relevant Code Context")
             appendLine()
             results.forEach { result ->
-                appendLine("### ${result.chunk.metadata.filePath} (Similarity: ${String.format("%.2f", result.similarity)})")
+                appendLine("### ${result.chunk.metadata.filePath}")
                 appendLine("**Type:** ${result.chunk.metadata.chunkType}")
                 if (result.chunk.metadata.functionName != null) {
                     appendLine("**Function:** ${result.chunk.metadata.functionName}")
@@ -161,7 +173,6 @@ internal class RAGService(
     }
 
     fun close() {
-        embeddingService?.close()
         isInitialized = false
     }
 }

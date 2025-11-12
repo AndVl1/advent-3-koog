@@ -90,6 +90,8 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
             val repositoryUrl = initialAnalysis.githubRepo
             val repositoryName = repositoryUrl.substringAfterLast("/").removeSuffix(".git")
 
+            logger.info("📊 RAG Indexing - URL: '$repositoryUrl', extracted name: '$repositoryName'")
+
             // Check if already indexed
             val alreadyIndexed = ragService.isRepositoryIndexed(repositoryName)
             if (alreadyIndexed) {
