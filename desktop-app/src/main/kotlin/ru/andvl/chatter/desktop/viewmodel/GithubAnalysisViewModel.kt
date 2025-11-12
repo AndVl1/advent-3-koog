@@ -42,6 +42,7 @@ class GithubAnalysisViewModel(
             is GithubAnalysisAction.ToggleAttachGoogleSheets -> handleToggleAttachGoogleSheets(action.attach)
             is GithubAnalysisAction.UpdateGoogleSheetsUrl -> handleUpdateGoogleSheetsUrl(action.url)
             is GithubAnalysisAction.ToggleForceSkipDocker -> handleToggleForceSkipDocker(action.forceSkip)
+            is GithubAnalysisAction.ToggleEnableEmbeddings -> handleToggleEnableEmbeddings(action.enable)
             is GithubAnalysisAction.StartAnalysis -> handleStartAnalysis()
             is GithubAnalysisAction.ClearError -> handleClearError()
             is GithubAnalysisAction.ClearResult -> handleClearResult()
@@ -105,6 +106,10 @@ class GithubAnalysisViewModel(
         _state.update { it.copy(forceSkipDocker = forceSkip) }
     }
 
+    private fun handleToggleEnableEmbeddings(enable: Boolean) {
+        _state.update { it.copy(enableEmbeddings = enable) }
+    }
+
     private fun handleStartAnalysis() {
         viewModelScope.launch {
             _state.update {
@@ -166,7 +171,8 @@ class GithubAnalysisViewModel(
                 fixingModel = fixingModelId,
                 attachGoogleSheets = currentState.attachGoogleSheets,
                 googleSheetsUrl = if (currentState.attachGoogleSheets) currentState.googleSheetsUrl else "",
-                forceSkipDocker = currentState.forceSkipDocker
+                forceSkipDocker = currentState.forceSkipDocker,
+                enableEmbeddings = currentState.enableEmbeddings
             )
 
             val result = interactor.analyzeRepository(config)

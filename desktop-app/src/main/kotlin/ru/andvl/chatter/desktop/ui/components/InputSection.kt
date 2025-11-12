@@ -333,6 +333,29 @@ private fun AdvancedSettingsSection(
     if (!state.useMainModelForFixing) {
         FixingModelSelection(state, onAction)
     }
+
+    // Embeddings Checkbox
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = state.enableEmbeddings,
+            onCheckedChange = { onAction(GithubAnalysisAction.ToggleEnableEmbeddings(it)) }
+        )
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(
+                text = "Generate embeddings",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "Create searchable index using Ollama (requires zylonai/multilingual-e5-large)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

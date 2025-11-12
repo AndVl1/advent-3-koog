@@ -63,3 +63,6 @@ server/gradle.properties.example
 desktop-app/logs/
 .kotlin/
 /memory/
+
+### RAG embeddings storage ###
+/rag/

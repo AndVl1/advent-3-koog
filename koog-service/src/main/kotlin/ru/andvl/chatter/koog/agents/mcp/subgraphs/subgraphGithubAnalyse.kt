@@ -80,6 +80,28 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
         storage.set(originalRequestKey, request)
         request.requirements?.let { storage.set(requirementsKey, it) }
 
+        // RAG: Get relevant context from indexed repository
+        val ragService = storage.get(ragServiceKey)
+        val embeddingConfig = storage.get(embeddingConfigKey)
+        val repositoryName = request.githubRepo.substringAfterLast("/").removeSuffix(".git")
+
+        val ragContext = if (ragService != null && embeddingConfig != null) {
+            logger.info("🔍 Searching RAG index for relevant context (top ${embeddingConfig.retrievalChunks} chunks)")
+            ragService.getRelevantContext(
+                query = request.userRequest,
+                repositoryName = repositoryName,
+                maxChunks = embeddingConfig.retrievalChunks,
+                similarityThreshold = embeddingConfig.similarityThreshold
+            )
+        } else {
+            logger.debug("RAG service not available, skipping semantic search")
+            ru.andvl.chatter.koog.embeddings.rag.RAGContext(
+                available = false,
+                chunks = emptyList(),
+                formattedContext = ""
+            )
+        }
+
         llm.writeSession {
             appendPrompt {
                 val requirementsText = request.requirements?.let { req ->
@@ -100,11 +122,28 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
                                         """.trimIndent()
                 } ?: ""
 
+                val ragContextText = if (ragContext.available && ragContext.formattedContext.isNotEmpty()) {
+                    """
+
+                    **📚 PRE-INDEXED CODE CONTEXT (from semantic search):**
+                    The repository has been pre-indexed. Here is the most relevant code based on the user's request:
+
+                    ${ragContext.formattedContext}
+
+                    **IMPORTANT**: Use this context as a starting point. These are the most relevant parts found through semantic search.
+                    You can still use MCP tools to get additional information if needed, but prioritize this pre-loaded context.
+                    """.trimIndent()
+                } else {
+                    ""
+                }
+
                 system(
                     """
                                         You are a GitHub repository analysis expert with access to GitHub API tools.
-                                        
+
                                         Your task is to thoroughly analyze the requested GitHub repository and gather comprehensive information to answer the user's specific questions, with special focus on structured requirements provided.
+
+                                        ${ragContextText}
                                         
                                         **IMPORTANT LANGUAGE REQUIREMENT:**
                                         - Detect the language of the original user request and requirements

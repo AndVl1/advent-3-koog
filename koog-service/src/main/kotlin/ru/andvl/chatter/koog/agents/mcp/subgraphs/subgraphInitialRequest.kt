@@ -65,8 +65,8 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
         val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
 
         edge(nodeStart forwardTo nodeInitialAnalysis)
-        edge(nodeInitialAnalysis forwardTo load)
-        edge(load forwardTo nodeRequirementsCollection)
+        edge(nodeInitialAnalysis/* forwardTo load)
+        edge(load */forwardTo nodeRequirementsCollection)
 
         edge(nodeRequirementsCollection forwardTo nodeExecuteTool onToolCall { true })
         edge(nodeRequirementsCollection forwardTo nodeProcessFinalRequirements onAssistantMessage { true })
