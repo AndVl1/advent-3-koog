@@ -1,5 +1,6 @@
 package ru.andvl.chatter.desktop.viewmodel
 
+import io.github.cdimascio.dotenv.Dotenv
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,8 +22,29 @@ class GithubAnalysisViewModel(
 
     private val viewModelScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private val _state = MutableStateFlow(AppState())
+    private val _state = MutableStateFlow(AppState(
+        apiKey = loadApiKeyFromEnv()
+    ))
     val state: StateFlow<AppState> = _state.asStateFlow()
+
+    /**
+     * Load API key from .env file if it exists
+     * Returns empty string if .env file is missing or API key is not set
+     */
+    private fun loadApiKeyFromEnv(): String {
+        return try {
+            val dotenv = Dotenv.configure()
+                .ignoreIfMissing()
+                .load()
+
+            // Try to load OPENROUTER_API_KEY (default provider)
+            // User can change it later via UI
+            dotenv["OPENROUTER_API_KEY"] ?: ""
+        } catch (e: Exception) {
+            // If any error occurs, return empty string
+            ""
+        }
+    }
 
     /**
      * Single entry point for all user actions

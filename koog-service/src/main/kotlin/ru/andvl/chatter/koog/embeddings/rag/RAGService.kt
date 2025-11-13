@@ -5,6 +5,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.embeddings.model.EmbeddingConfig
+import ru.andvl.chatter.koog.embeddings.model.RerankingStrategyType
+import ru.andvl.chatter.koog.embeddings.reranking.*
 import ru.andvl.chatter.koog.embeddings.storage.ChunkVectorStorage
 import java.nio.file.Path
 
@@ -21,6 +23,7 @@ internal class RAGService(
 ) {
     private var vectorStorage: ChunkVectorStorage? = null
     private var isInitialized = false
+    private val ollamaClient = OllamaClient(baseUrl = config.ollamaBaseUrl)
 
     /**
      * Initialize RAG service (check Ollama availability)
@@ -35,8 +38,7 @@ internal class RAGService(
 
         return try {
             // Test Ollama availability
-            val testClient = OllamaClient(baseUrl = config.ollamaBaseUrl)
-            val available = checkOllamaAvailability(testClient)
+            val available = checkOllamaAvailability(ollamaClient)
 
             if (available) {
                 vectorStorage = ChunkVectorStorage(storageRoot, config)
@@ -99,7 +101,7 @@ internal class RAGService(
      * @param query User's query for semantic search
      * @param repositoryName Repository to search in
      * @param maxChunks Maximum number of chunks to return (default from config or 20)
-     * @param similarityThreshold Minimum similarity score (0.0-1.0). Chunks below this threshold are filtered out.
+     * @param similarityThreshold Minimum similarity score (0.0-1.0). Used only for THRESHOLD strategy.
      */
     suspend fun getRelevantContext(
         query: String,
@@ -112,35 +114,56 @@ internal class RAGService(
             return RAGContext(
                 available = false,
                 chunks = emptyList(),
-                formattedContext = ""
+                formattedContext = "",
+                rerankingInfo = null
             )
         }
 
-        logger.debug("🔍 Searching for context: $query (threshold: $similarityThreshold)")
+        logger.debug("🔍 Searching for context: $query (strategy: ${config.rerankingStrategy})")
 
-        val results = vectorStorage.searchSimilarChunks(
+        // Phase 1: Vector search (no filtering at this stage)
+        val initialResults = vectorStorage.searchSimilarChunks(
             query = query,
             repositoryName = repositoryName,
             topK = maxChunks,
-            similarityThreshold = similarityThreshold
+            similarityThreshold = 0.0  // Get all results for reranking
         )
 
-        if (results.isEmpty()) {
+        if (initialResults.isEmpty()) {
             logger.debug("No relevant chunks found")
             return RAGContext(
                 available = true,
                 chunks = emptyList(),
-                formattedContext = ""
+                formattedContext = "",
+                rerankingInfo = RerankingInfo(
+                    strategyUsed = config.rerankingStrategy.name,
+                    initialCount = 0,
+                    finalCount = 0,
+                    filteredOut = 0
+                )
             )
         }
 
-        logger.info("✅ Found ${results.size} relevant chunks")
+        logger.info("📊 Vector search returned ${initialResults.size} chunks")
+        logSimilarityDistribution(initialResults)
+
+        // Phase 2: Reranking/Filtering
+        val rerankingStrategy = createRerankingStrategy(similarityThreshold)
+        val rerankedResults = rerankingStrategy.rerank(query, initialResults)
+
+        val filteredCount = initialResults.size - rerankedResults.size
+        logger.info("🎯 After reranking (${rerankingStrategy.name}): ${rerankedResults.size} chunks (filtered out: $filteredCount)")
+
+        if (rerankedResults.isNotEmpty()) {
+            logger.debug("Top result: similarity=${String.format("%.4f", rerankedResults.first().similarity)}, file=${rerankedResults.first().chunk.metadata.filePath}")
+        }
 
         val formattedContext = buildString {
             appendLine("## 📚 Relevant Code Context")
             appendLine()
-            results.forEach { result ->
+            rerankedResults.forEach { result ->
                 appendLine("### ${result.chunk.metadata.filePath}")
+                appendLine("**Similarity:** ${String.format("%.4f", result.similarity)}")
                 appendLine("**Type:** ${result.chunk.metadata.chunkType}")
                 if (result.chunk.metadata.functionName != null) {
                     appendLine("**Function:** ${result.chunk.metadata.functionName}")
@@ -159,9 +182,54 @@ internal class RAGService(
 
         return RAGContext(
             available = true,
-            chunks = results.map { it.chunk },
-            formattedContext = formattedContext
+            chunks = rerankedResults.map { it.chunk },
+            formattedContext = formattedContext,
+            rerankingInfo = RerankingInfo(
+                strategyUsed = rerankingStrategy.name,
+                initialCount = initialResults.size,
+                finalCount = rerankedResults.size,
+                filteredOut = filteredCount,
+                topSimilarities = rerankedResults.take(5).map { it.similarity }
+            )
         )
+    }
+
+    /**
+     * Create reranking strategy based on configuration
+     */
+    private fun createRerankingStrategy(threshold: Double): RerankingStrategy {
+        return when (config.rerankingStrategy) {
+            RerankingStrategyType.NONE -> NoFilterStrategy()
+            RerankingStrategyType.THRESHOLD -> ThresholdFilterStrategy(threshold)
+            RerankingStrategyType.ADAPTIVE -> AdaptiveThresholdStrategy(config.adaptiveThresholdRatio)
+            RerankingStrategyType.SCORE_GAP -> ScoreGapFilterStrategy(config.scoreGapThreshold)
+            RerankingStrategyType.MMR -> MMRFilterStrategy(config.mmrLambda, config.retrievalChunks)
+            RerankingStrategyType.MULTI_CRITERIA -> MultiCriteriaFilterStrategy(
+                minSimilarity = threshold,
+                preferFunctions = true
+            )
+            RerankingStrategyType.OLLAMA_CONTEXTUAL_EMBEDDINGS -> OllamaEmbeddingRerankingStrategy(
+                ollamaClient = ollamaClient,
+                embeddingModelName = config.modelName,
+                topK = config.retrievalChunks,
+                truncateChunks = config.ollamaRerankTruncateChunks,
+                maxChunkLength = config.ollamaRerankMaxChunkLength
+            )
+        }
+    }
+
+    /**
+     * Log similarity score distribution for analysis
+     */
+    private fun logSimilarityDistribution(results: List<ru.andvl.chatter.koog.embeddings.storage.ChunkSearchResult>) {
+        if (results.isEmpty()) return
+
+        val similarities = results.map { it.similarity }
+        val min = similarities.minOrNull() ?: 0.0
+        val max = similarities.maxOrNull() ?: 0.0
+        val avg = similarities.average()
+
+        logger.debug("Similarity distribution: min=${String.format("%.4f", min)}, max=${String.format("%.4f", max)}, avg=${String.format("%.4f", avg)}")
     }
 
     /**
@@ -193,5 +261,17 @@ internal data class RAGIndexingResult(
 internal data class RAGContext(
     val available: Boolean,
     val chunks: List<ru.andvl.chatter.koog.embeddings.model.DocumentChunk>,
-    val formattedContext: String
+    val formattedContext: String,
+    val rerankingInfo: RerankingInfo? = null
+)
+
+/**
+ * Information about reranking process for analysis
+ */
+internal data class RerankingInfo(
+    val strategyUsed: String,
+    val initialCount: Int,
+    val finalCount: Int,
+    val filteredOut: Int,
+    val topSimilarities: List<Double> = emptyList()
 )

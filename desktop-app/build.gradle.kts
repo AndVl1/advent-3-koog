@@ -55,6 +55,9 @@ dependencies {
     // Logging
     implementation(libs.logback.classic)
     implementation(libs.slf4j.api)
+
+    // Environment variables
+    implementation(libs.dotenv)
 }
 
 compose.desktop {
