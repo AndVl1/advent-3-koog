@@ -32,8 +32,8 @@ internal class RagToolSet : ToolSet {
     fun searchCodeSemantically(
         @LLMDescription("Natural language description of what code you're looking for (e.g., 'authentication logic', 'database connection setup', 'error handling')")
         query: String,
-        @LLMDescription("Number of code chunks to return (default: 5, max: 20)")
-        topK: Int = 5
+        @LLMDescription("Number of code chunks to return (default: 10, max: 20)")
+        topK: Int = 15
     ): SearchCodeResult = runBlocking {
         logger.info("🔍 Semantic search query: '$query' (topK: $topK)")
 

@@ -10,3 +10,9 @@
 - Keep only scripts that test current, active functionality
 - Document script purpose and requirements in `/tests/README.md`
 - Clean up outdated scripts after features are validated and working
+
+## Keep in mind
+- Everything in `/thirdparty/` dir is read-only, and you should not modify code there. 
+These are sources of used libraries
+- Use code in `/thirdparty/` to learn sources of downloaded there libraries
+- Use proper privacy modifiers. If code is not use outside module – do not forget to set private modifier

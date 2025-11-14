@@ -3,10 +3,10 @@ package ru.andvl.chatter.koog.embeddings.storage
 import ai.koog.embeddings.local.LLMEmbedder
 import ai.koog.embeddings.local.OllamaEmbeddingModels
 import ai.koog.prompt.executor.ollama.client.OllamaClient
-import ai.koog.rag.base.mostRelevantDocuments
 import ai.koog.rag.vector.FileDocumentEmbeddingStorage
 import ai.koog.rag.vector.TextDocumentEmbedder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.embeddings.chunking.ChunkingStrategyFactory
@@ -142,39 +142,47 @@ internal class ChunkVectorStorage(
     /**
      * Search for similar chunks using semantic search
      * Uses repository-specific storage for automatic isolation
+     *
+     * Note: This method returns results WITHOUT applying similarityThreshold
+     * to allow for reranking strategies. Filtering should be done at RAGService level.
      */
     suspend fun searchSimilarChunks(
         query: String,
         repositoryName: String,
         topK: Int = 5,
-        similarityThreshold: Double = 0.3  // Filter out chunks with similarity < 0.3
+        similarityThreshold: Double = 0.3  // Kept for backward compatibility, but not used here
     ): List<ChunkSearchResult> = withContext(Dispatchers.IO) {
         try {
             // Get repository-specific storage
             // This automatically isolates search to only this repository's chunks
             val repoStorage = getRepositoryStorage(repositoryName)
 
-            // Use Koog's mostRelevantDocuments extension with automatic ranking and filtering
+            // Use Koog's rankDocuments to get RankedDocument with similarity scores
             logger.info("Query: $query")
-            val relevantChunks = repoStorage
-                .mostRelevantDocuments(query, count = topK, similarityThreshold = similarityThreshold)
+            val rankedResults = repoStorage
+                .rankDocuments(query)
                 .toList()
+                .sortedByDescending { it.similarity }
+                .take(topK)
 
             // Record metrics
             RAGMetrics.recordSearch(
                 repositoryName = repositoryName,
                 requested = topK,
-                returned = relevantChunks,
-                filteredFrom = relevantChunks.size  // No filtering needed - storage is already isolated
+                returned = rankedResults.map { it.document },
+                filteredFrom = rankedResults.size
             )
 
-            logger.debug("Found ${relevantChunks.size} relevant chunks in repository '$repositoryName' (threshold: $similarityThreshold)")
+            logger.debug("Found ${rankedResults.size} ranked chunks in repository '$repositoryName'")
+            rankedResults.forEach {
+                logger.debug("  - similarity: ${String.format("%.4f", it.similarity)}, file: ${it.document.metadata.filePath}")
+            }
 
-            // Convert to ChunkSearchResult
-            relevantChunks.mapIndexed { index, chunk ->
+            // Convert to ChunkSearchResult with REAL similarity scores
+            rankedResults.mapIndexed { index, rankedDoc ->
                 ChunkSearchResult(
-                    chunk = chunk,
-                    similarity = 1.0, // Similarity already computed by Koog, but not exposed
+                    chunk = rankedDoc.document,
+                    similarity = rankedDoc.similarity,
                     rank = index + 1
                 )
             }
