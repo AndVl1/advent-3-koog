@@ -14,6 +14,7 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
+import ru.andvl.chatter.koog.agents.mcp.GithubAnalysisNodes
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
 import ru.andvl.chatter.koog.agents.memory.*
 import ru.andvl.chatter.koog.mcp.McpProvider
@@ -31,16 +32,18 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
     fixingModel: LLModel
 ): AIAgentSubgraphDelegate<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel> =
     subgraph<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>(
-        "initial-analysis",
+        GithubAnalysisNodes.Subgraphs.INITIAL_ANALYSIS,
         tools = McpProvider.getGoogleDocsToolsRegistry().tools
     ) {
         val saveRequirements by nodeSaveRequirementsFromLastMessage(
-            name = "save-requirements",
+            name = GithubAnalysisNodes.InitialAnalysis.SAVE_REQUIREMENTS,
             subject = MemorySubjects.HomeworkRequirements,
             scope = MemoryScopeType.AGENT
         )
 
-        val load by node<InitialPromptAnalysisModel, InitialPromptAnalysisModel>("load-memory") { initial ->
+        val load by node<InitialPromptAnalysisModel, InitialPromptAnalysisModel>(
+            GithubAnalysisNodes.InitialAnalysis.LOAD_MEMORY
+        ) { initial ->
             if (initial !is InitialPromptAnalysisModel.SuccessAnalysisModel) return@node initial
             withMemory {
                 val concepts = listOf(
@@ -82,7 +85,9 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
 private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeInitialAnalysis(
     fixingModel: LLModel
 ) =
-    node<GithubChatRequest, InitialPromptAnalysisModel>("initial-analysis") { request ->
+    node<GithubChatRequest, InitialPromptAnalysisModel>(
+        GithubAnalysisNodes.InitialAnalysis.INITIAL_ANALYSIS
+    ) { request ->
         // Store the original request for use in later subgraphs (like Google Sheets)
         storage.set(initialGithubRequestKey, request)
 
@@ -178,7 +183,9 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
 
 // Node 2: Requirements collection (from Google Docs if needed)
 private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeRequirementsCollection() =
-    node<InitialPromptAnalysisModel, Message.Response>("requirements-collection") { initialAnalysis ->
+    node<InitialPromptAnalysisModel, Message.Response>(
+        GithubAnalysisNodes.InitialAnalysis.REQUIREMENTS_COLLECTION
+    ) { initialAnalysis ->
         when (initialAnalysis) {
             is InitialPromptAnalysisModel.FailedAnalysisModel -> {
                 throw IllegalStateException("Cannot proceed with failed analysis: ${initialAnalysis.reason}")
@@ -272,7 +279,7 @@ private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisM
 private fun AIAgentSubgraphBuilderBase<GithubChatRequest, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeProcessFinalRequirements(
     fixingModel: LLModel
 ) =
-    node<String, InitialPromptAnalysisModel.SuccessAnalysisModel>("process-final-requirements") { rawRequirementsData ->
+    node<String, InitialPromptAnalysisModel.SuccessAnalysisModel>(GithubAnalysisNodes.InitialAnalysis.PROCESS_FINAL_REQUIREMENTS) { rawRequirementsData ->
         val initialAnalysis = storage.get(initialAnalysisKey) as InitialPromptAnalysisModel.SuccessAnalysisModel
 
         if (initialAnalysis.googleDocsUrl != null && initialAnalysis.requirements == null) {

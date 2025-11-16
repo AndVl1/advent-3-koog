@@ -1,5 +1,6 @@
 package ru.andvl.chatter.desktop.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -11,10 +12,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.unit.dp
 import ru.andvl.chatter.desktop.models.AppState
 import ru.andvl.chatter.desktop.models.GithubAnalysisAction
-import ru.andvl.chatter.desktop.ui.components.ErrorCard
-import ru.andvl.chatter.desktop.ui.components.InputSection
-import ru.andvl.chatter.desktop.ui.components.ResultSection
-import ru.andvl.chatter.desktop.ui.components.saveMarkdownReport
+import ru.andvl.chatter.desktop.ui.components.*
 
 /**
  * Main GitHub analysis screen
@@ -57,25 +55,44 @@ fun GithubAnalysisScreen(
         }
 
         item("analyze-button") {
-            Button(
-                onClick = { onAction(GithubAnalysisAction.StartAnalysis) },
-                enabled = !state.isLoading,
-                modifier = Modifier.fillMaxWidth()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Default.Search, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (state.isLoading) "Analyzing..." else "Analyze Repository")
+                Button(
+                    onClick = { onAction(GithubAnalysisAction.StartAnalysis) },
+                    enabled = !state.isLoading,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (state.isLoading) "Analyzing..." else "Analyze Repository")
+                }
+
+                AnimatedVisibility(state.isLoading) {
+                    Button(
+                        onClick = { onAction(GithubAnalysisAction.CancelAnalysis) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        modifier = Modifier.weight(0.3f)
+                    ) {
+                        Text("Cancel")
+                    }
+                }
             }
         }
 
-        // Loading Indicator
+        // Analysis Progress with Events
         if (state.isLoading) {
-            item("loading") {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text(
-                    "Analyzing repository... This may take a few minutes.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            item("progress") {
+                AnalysisProgressView(
+                    currentEvent = state.currentEvent,
+                    progress = state.analysisProgress,
+                    recentEvents = state.recentEvents,
+                    currentStep = state.currentStep,
+                    totalSteps = state.totalSteps,
+                    currentStepName = state.currentStepName
                 )
             }
         }

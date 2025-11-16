@@ -11,6 +11,8 @@ import ru.andvl.chatter.desktop.models.AnalysisConfig
 import ru.andvl.chatter.desktop.models.AppState
 import ru.andvl.chatter.desktop.models.GithubAnalysisAction
 import ru.andvl.chatter.desktop.models.LLMProvider
+import ru.andvl.chatter.shared.models.github.AnalysisEvent
+import ru.andvl.chatter.shared.models.github.AnalysisEventOrResult
 
 /**
  * ViewModel for GitHub analysis screen
@@ -26,6 +28,9 @@ class GithubAnalysisViewModel(
         apiKey = loadApiKeyFromEnv()
     ))
     val state: StateFlow<AppState> = _state.asStateFlow()
+
+    // Job for the current analysis, can be cancelled
+    private var analysisJob: Job? = null
 
     /**
      * Load API key from .env file if it exists
@@ -66,6 +71,7 @@ class GithubAnalysisViewModel(
             is GithubAnalysisAction.ToggleForceSkipDocker -> handleToggleForceSkipDocker(action.forceSkip)
             is GithubAnalysisAction.ToggleEnableEmbeddings -> handleToggleEnableEmbeddings(action.enable)
             is GithubAnalysisAction.StartAnalysis -> handleStartAnalysis()
+            is GithubAnalysisAction.CancelAnalysis -> handleCancelAnalysis()
             is GithubAnalysisAction.ClearError -> handleClearError()
             is GithubAnalysisAction.ClearResult -> handleClearResult()
         }
@@ -133,13 +139,25 @@ class GithubAnalysisViewModel(
     }
 
     private fun handleStartAnalysis() {
-        viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    isLoading = true,
-                    error = null,
-                    analysisResult = null
-                )
+        // Cancel any existing analysis job
+        analysisJob?.cancel()
+
+        analysisJob = viewModelScope.launch(Dispatchers.IO) {
+            // Update UI state on Main thread
+            withContext(Dispatchers.Main) {
+                _state.update {
+                    it.copy(
+                        isLoading = true,
+                        error = null,
+                        analysisResult = null,
+                        currentEvent = null,
+                        analysisProgress = 0,
+                        currentStep = 0,
+                        totalSteps = 6,
+                        currentStepName = "",
+                        recentEvents = emptyList()
+                    )
+                }
             }
 
             val currentState = _state.value
@@ -197,23 +215,98 @@ class GithubAnalysisViewModel(
                 enableEmbeddings = currentState.enableEmbeddings
             )
 
-            val result = interactor.analyzeRepository(config)
-
-            _state.update { state ->
-                if (result.isSuccess) {
-                    state.copy(
+            try {
+                // Use streaming analysis with events
+                interactor.analyzeRepositoryWithEvents(config)
+                    .collect { eventOrResult ->
+                        when (eventOrResult) {
+                            is AnalysisEventOrResult.Event -> {
+                                handleAnalysisEvent(eventOrResult.event)
+                            }
+                            is AnalysisEventOrResult.Result -> {
+                                _state.update {
+                                    it.copy(
+                                        isLoading = false,
+                                        analysisResult = eventOrResult.response,
+                                        currentEvent = null,
+                                        error = null
+                                    )
+                                }
+                            }
+                            is AnalysisEventOrResult.Error -> {
+                                _state.update {
+                                    it.copy(
+                                        isLoading = false,
+                                        analysisResult = null,
+                                        error = eventOrResult.message,
+                                        currentEvent = null
+                                    )
+                                }
+                            }
+                        }
+                    }
+            } catch (e: CancellationException) {
+                // Analysis was cancelled by user
+                _state.update {
+                    it.copy(
                         isLoading = false,
-                        analysisResult = result.getOrNull(),
-                        error = null
+                        currentEvent = null,
+                        error = "Анализ отменен пользователем"
                     )
-                } else {
-                    state.copy(
+                }
+                throw e  // Re-throw to properly cancel the coroutine
+            } catch (e: Exception) {
+                // Handle other exceptions
+                _state.update {
+                    it.copy(
                         isLoading = false,
                         analysisResult = null,
-                        error = result.exceptionOrNull()?.message ?: "Unknown error occurred"
+                        error = e.message ?: "Неизвестная ошибка",
+                        currentEvent = null
                     )
                 }
             }
+        }
+    }
+
+    private fun handleCancelAnalysis() {
+        analysisJob?.cancel()
+        analysisJob = null
+        _state.update {
+            it.copy(
+                isLoading = false,
+                currentEvent = null
+            )
+        }
+    }
+
+    private fun handleAnalysisEvent(event: AnalysisEvent) {
+        _state.update { state ->
+            // Обновляем информацию о шагах если получили Progress событие
+            val (currentStep, totalSteps, stepName) = if (event is AnalysisEvent.Progress) {
+                Triple(event.currentStep, event.totalSteps, event.stepName)
+            } else {
+                Triple(state.currentStep, state.totalSteps, state.currentStepName)
+            }
+
+            state.copy(
+                currentEvent = event,
+                recentEvents = (state.recentEvents + event).takeLast(5),
+                analysisProgress = calculateProgress(event, state.analysisProgress),
+                currentStep = currentStep,
+                totalSteps = totalSteps,
+                currentStepName = stepName
+            )
+        }
+    }
+
+    private fun calculateProgress(event: AnalysisEvent, currentProgress: Int): Int {
+        return when (event) {
+            // Прогресс теперь определяется только через Progress события
+            is AnalysisEvent.Progress -> event.percentage
+            is AnalysisEvent.Completed -> 100
+            // Все остальные события не меняют прогресс
+            else -> currentProgress
         }
     }
 

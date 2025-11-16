@@ -15,6 +15,7 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
+import ru.andvl.chatter.koog.agents.mcp.GithubAnalysisNodes
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
 import ru.andvl.chatter.koog.agents.memory.*
 import ru.andvl.chatter.koog.agents.utils.FixedWholeHistoryCompressionStrategy
@@ -34,7 +35,7 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
     fixingModel: LLModel,
 ): AIAgentSubgraphDelegate<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel> =
     subgraph(
-        name = "github-analysis",
+        name = GithubAnalysisNodes.Subgraphs.GITHUB_ANALYSIS,
         tools = buildList {
             addAll(McpProvider.getGithubToolsRegistry().tools)
             addAll(McpProvider.getRagToolsRegistry().tools)
@@ -42,10 +43,10 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
     ) {
         val nodeLoadMemory by nodeLoadGithubMemory()
         val nodeGithubRequest by nodeGithubRequest()
-        val nodeExecuteTool by nodeExecuteTool("github-execute-tool")
-        val nodeSendToolResult by nodeLLMSendMultipleToolResults("github-subgraph-send-tool")
+        val nodeExecuteTool by nodeExecuteTool(GithubAnalysisNodes.GithubAnalysis.GITHUB_EXECUTE_TOOL)
+        val nodeSendToolResult by nodeLLMSendMultipleToolResults(GithubAnalysisNodes.GithubAnalysis.GITHUB_SEND_TOOL_RESULT)
         val nodeCompressHistory by nodeLLMCompressHistory<List<ReceivedToolResult>>(
-            name = "github-compress-history",
+            name = GithubAnalysisNodes.GithubAnalysis.GITHUB_COMPRESS_HISTORY,
             strategy = FixedWholeHistoryCompressionStrategy()
         )
         val nodeProcessResult by nodeProcessResult(fixingModel)
@@ -77,7 +78,9 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
     }
 
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeGithubRequest() =
-    node<InitialPromptAnalysisModel.SuccessAnalysisModel, List<Message.Response>>("github-process-user-request") { request ->
+    node<InitialPromptAnalysisModel.SuccessAnalysisModel, List<Message.Response>>(
+        GithubAnalysisNodes.GithubAnalysis.GITHUB_PROCESS_USER_REQUEST
+    ) { request ->
         // Store original request for later use
         storage.set(originalRequestKey, request)
         request.requirements?.let { storage.set(requirementsKey, it) }
@@ -244,7 +247,9 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeProcessResult(
     fixingModel: LLModel
 ) =
-    node<String, GithubRepositoryAnalysisModel.SuccessAnalysisModel>("github-process-llm-result") { rawAnalysisData ->
+    node<String, GithubRepositoryAnalysisModel.SuccessAnalysisModel>(
+        GithubAnalysisNodes.GithubAnalysis.GITHUB_PROCESS_LLM_RESULT
+    ) { rawAnalysisData ->
         val originalRequest = storage.get(originalRequestKey)
         llm.writeSession {
             changeLLMParams(
@@ -526,7 +531,9 @@ private fun AIAgentSubgraphBuilderBase<*, *>.nodeExecuteTool(
 // Load GitHub analysis from memory
 @OptIn(InternalAgentsApi::class)
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeLoadGithubMemory() =
-    node<InitialPromptAnalysisModel.SuccessAnalysisModel, InitialPromptAnalysisModel.SuccessAnalysisModel>("load-github-memory") { request ->
+    node<InitialPromptAnalysisModel.SuccessAnalysisModel, InitialPromptAnalysisModel.SuccessAnalysisModel>(
+        GithubAnalysisNodes.GithubAnalysis.LOAD_GITHUB_MEMORY
+    ) { request ->
         withMemory {
             val repoUrl = request.githubRepo
             logger.info("📚 Loading GitHub analysis from memory for: $repoUrl")
@@ -557,7 +564,9 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
 // Save GitHub analysis to memory
 @OptIn(InternalAgentsApi::class)
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>.nodeSaveGithubMemory() =
-    node<GithubRepositoryAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>("save-github-memory") { analysisResult ->
+    node<GithubRepositoryAnalysisModel.SuccessAnalysisModel, GithubRepositoryAnalysisModel.SuccessAnalysisModel>(
+        GithubAnalysisNodes.GithubAnalysis.SAVE_GITHUB_MEMORY
+    ) { analysisResult ->
         val originalRequest = storage.get(originalRequestKey)
         val repoUrl = originalRequest?.githubRepo ?: ""
 

@@ -3,6 +3,7 @@ package ru.andvl.chatter.koog.service
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.features.eventHandler.feature.handleEvents
 import ai.koog.agents.features.tracing.feature.Tracing
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageFileWriter
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageLogWriter
@@ -17,10 +18,16 @@ import ai.koog.prompt.structure.StructureFixingParser
 import ai.koog.prompt.structure.executeStructured
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import ru.andvl.chatter.koog.agents.mcp.GithubAnalysisNodes
 import ru.andvl.chatter.koog.agents.mcp.getGithubAnalysisStrategy
 import ru.andvl.chatter.koog.agents.mcp.getToolAgentPrompt
 import ru.andvl.chatter.koog.agents.memory.githubMemoryProvider
@@ -215,10 +222,19 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         }
     }
 
-    suspend fun analyseGithub(
+    /**
+     * Базовая функция для анализа GitHub репозитория с опциональной поддержкой событий
+     *
+     * @param promptExecutor Исполнитель промптов
+     * @param request Запрос на анализ
+     * @param llmConfig Конфигурация LLM
+     * @param eventsChannel Опциональный канал для отправки промежуточных событий
+     */
+    private suspend fun analyseGithubBase(
         promptExecutor: PromptExecutor,
         request: GithubAnalysisRequest,
         llmConfig: LLMConfig,
+        eventsChannel: Channel<AnalysisEvent>? = null
     ): GithubAnalysisResponse {
         return withContext(Dispatchers.IO) {
             val toolRegistry = McpProvider.getGithubToolsRegistry()
@@ -284,6 +300,119 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 toolRegistry = toolRegistry,
                 id = "github-analyzer",
                 installFeatures = {
+                    // Добавить EventHandler если передан eventsChannel
+                    if (eventsChannel != null) {
+                        handleEvents {
+                            // Определяем основные шаги анализа (подграфы)
+                            var currentStepNumber = 0
+                            val totalSteps = 6 // Всего основных шагов
+                            val completedStages = mutableSetOf<AnalysisStage>()
+
+                            onStrategyStarting { _ ->
+                                eventsChannel.send(AnalysisEvent.Started("Начинаем анализ репозитория..."))
+                                currentStepNumber = 0
+                                eventsChannel.send(
+                                    AnalysisEvent.Progress(
+                                        currentStep = 0,
+                                        totalSteps = totalSteps,
+                                        stepName = "Инициализация"
+                                    )
+                                )
+                            }
+
+                            onNodeExecutionStarting { eventContext ->
+                                val nodeName = eventContext.node.name
+                                logger.info { "📌 Node starting: $nodeName" }
+
+                                // Определяем описание и стадию для важных нод
+                                val (description, stage) = when (nodeName) {
+                                    // Сбор требований
+                                    GithubAnalysisNodes.InitialAnalysis.REQUIREMENTS_COLLECTION ->
+                                        "Сбор требований" to AnalysisStage.COLLECTING_REQUIREMENTS
+
+                                    // RAG индексация
+                                    GithubAnalysisNodes.RAGIndexing.CLONE_AND_INDEX ->
+                                        "Индексация кода" to AnalysisStage.RAG_INDEXING
+
+                                    // Анализ GitHub - основной узел запроса
+                                    GithubAnalysisNodes.GithubAnalysis.GITHUB_PROCESS_USER_REQUEST ->
+                                        "Анализ репозитория" to AnalysisStage.ANALYZING_REPOSITORY
+
+                                    // Docker анализ
+                                    GithubAnalysisNodes.DockerBuild.DOCKER_REQUEST ->
+                                        "Анализ Docker" to AnalysisStage.DOCKER_ANALYSIS
+
+                                    // Google Sheets
+                                    GithubAnalysisNodes.GoogleSheets.CHECK_GOOGLE_SHEETS ->
+                                        "Google Sheets" to AnalysisStage.GOOGLE_SHEETS_INTEGRATION
+
+                                    // Остальные узлы не создают новый шаг прогресса
+                                    else -> null to null
+                                }
+
+                                // Отправляем Progress событие только для важных стадий
+                                if (stage != null && description != null) {
+                                    // Если встретили новую стадию, увеличиваем номер шага
+                                    if (!completedStages.contains(stage) && stage != AnalysisStage.FINALIZING) {
+                                        completedStages.add(stage)
+                                        currentStepNumber = completedStages.size
+                                        eventsChannel.send(
+                                            AnalysisEvent.Progress(
+                                                currentStep = currentStepNumber,
+                                                totalSteps = totalSteps,
+                                                stepName = description
+                                            )
+                                        )
+                                    }
+                                    eventsChannel.send(AnalysisEvent.StageUpdate(stage, description))
+                                }
+
+                                // Отправляем NodeStarted для ВСЕХ нод (с описанием или без)
+                                eventsChannel.send(
+                                    AnalysisEvent.NodeStarted(
+                                        nodeName = nodeName,
+                                        description = description
+                                    )
+                                )
+                            }
+
+                            onNodeExecutionCompleted { eventContext ->
+                                eventsChannel.send(
+                                    AnalysisEvent.NodeCompleted(
+                                        eventContext.node.name,
+                                        null
+                                    )
+                                )
+                            }
+
+                            onToolCallStarting { eventContext ->
+                                val toolName = eventContext.tool.name
+                                val description = when {
+                                    toolName.contains("search") -> "Поиск в коде..."
+                                    toolName.contains("github") -> "Получение данных из GitHub..."
+                                    toolName.contains("docker") -> "Работа с Docker..."
+                                    toolName.contains("sheet") || toolName.contains("google") -> "Работа с Google Sheets..."
+                                    else -> "Выполняется $toolName..."
+                                }
+                                eventsChannel.send(
+                                    AnalysisEvent.ToolExecution(toolName, description)
+                                )
+                            }
+
+                            onStrategyCompleted { _ ->
+                                eventsChannel.send(AnalysisEvent.StageUpdate(AnalysisStage.FINALIZING, "Завершение анализа"))
+                                eventsChannel.send(
+                                    AnalysisEvent.Progress(
+                                        currentStep = totalSteps,
+                                        totalSteps = totalSteps,
+                                        stepName = "Формирование результатов"
+                                    )
+                                )
+                                eventsChannel.send(AnalysisEvent.Completed("Анализ завершён успешно"))
+                            }
+                        }
+                    }
+
                     install(Tracing) {
                         val outputPath = Path("./logs/koog_trace.log")
                         addMessageProcessor(TraceFeatureMessageLogWriter(logger) { it.toString().take(200) })
@@ -407,6 +536,66 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     userRequestAnalysis = null,
                     dockerInfo = null
                 )
+            }
+        }
+    }
+
+    /**
+     * Analyze GitHub repository (existing API without streaming)
+     *
+     * @param promptExecutor Prompt executor
+     * @param request Analysis request
+     * @param llmConfig LLM configuration
+     * @return Analysis response
+     */
+    suspend fun analyseGithub(
+        promptExecutor: PromptExecutor,
+        request: GithubAnalysisRequest,
+        llmConfig: LLMConfig,
+    ): GithubAnalysisResponse {
+        return analyseGithubBase(promptExecutor, request, llmConfig, eventsChannel = null)
+    }
+
+    /**
+     * Analyze GitHub repository with streaming events
+     *
+     * @param promptExecutor Prompt executor
+     * @param request Analysis request
+     * @param llmConfig LLM configuration
+     * @return Flow of events and final result
+     */
+    fun analyseGithubWithEvents(
+        promptExecutor: PromptExecutor,
+        request: GithubAnalysisRequest,
+        llmConfig: LLMConfig,
+    ): Flow<AnalysisEventOrResult> = flow {
+        val eventsChannel = Channel<AnalysisEvent>(Channel.BUFFERED)
+
+        // Запускаем анализ в отдельной coroutine
+        coroutineScope {
+            val analysisJob = async(Dispatchers.IO) {
+                try {
+                    analyseGithubBase(promptExecutor, request, llmConfig, eventsChannel)
+                } catch (e: Exception) {
+                    logger.error(e) { "Analysis failed with exception" }
+                    eventsChannel.send(AnalysisEvent.Error(e.message ?: "Unknown error", false))
+                    null
+                } finally {
+                    eventsChannel.close()
+                }
+            }
+
+            // Пересылаем события из channel в Flow
+            for (event in eventsChannel) {
+                emit(AnalysisEventOrResult.Event(event))
+            }
+
+            // Получаем результат анализа
+            val result = analysisJob.await()
+            if (result != null) {
+                emit(AnalysisEventOrResult.Result(result))
+            } else {
+                emit(AnalysisEventOrResult.Error("Analysis failed", null))
             }
         }
     }

@@ -1,7 +1,10 @@
 package ru.andvl.chatter.desktop.interactor
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import ru.andvl.chatter.desktop.models.AnalysisConfig
 import ru.andvl.chatter.desktop.repository.GithubAnalysisRepository
+import ru.andvl.chatter.shared.models.github.AnalysisEventOrResult
 import ru.andvl.chatter.shared.models.github.GithubAnalysisResponse
 
 /**
@@ -24,6 +27,25 @@ class GithubAnalysisInteractor(
 
         // Execute analysis through repository
         return repository.analyzeGithubRepository(config)
+    }
+
+    /**
+     * Execute GitHub repository analysis with streaming events
+     */
+    fun analyzeRepositoryWithEvents(config: AnalysisConfig): Flow<AnalysisEventOrResult> {
+        // Validate inputs
+        val validationError = validateConfig(config)
+        if (validationError != null) {
+            return flow {
+                emit(AnalysisEventOrResult.Error(
+                    message = validationError,
+                    stackTrace = null
+                ))
+            }
+        }
+
+        // Execute analysis with events through repository
+        return repository.analyzeGithubRepositoryWithEvents(config)
     }
 
     /**

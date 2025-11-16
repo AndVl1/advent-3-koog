@@ -80,6 +80,11 @@ sealed interface GithubAnalysisAction {
     data object StartAnalysis : GithubAnalysisAction
 
     /**
+     * User clicked "Cancel" button to stop analysis
+     */
+    data object CancelAnalysis : GithubAnalysisAction
+
+    /**
      * Clear error message
      */
     data object ClearError : GithubAnalysisAction
