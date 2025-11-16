@@ -21,6 +21,14 @@ dependencies {
     implementation(libs.koog.vector.storage)
     implementation(libs.koog.prompt.executor.ollama)
 
+    // OpenTelemetry
+    implementation(libs.koog.agents.features.opentelemetry)
+    implementation(libs.opentelemetry.exporter.logging)
+    implementation(libs.opentelemetry.exporter.otlp)
+
+    // Configuration
+    implementation(libs.dotenv)
+
     // Logging
     implementation(libs.logback.classic)
 

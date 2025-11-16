@@ -4,6 +4,7 @@ import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.features.eventHandler.feature.handleEvents
+import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.agents.features.tracing.feature.Tracing
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageFileWriter
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageLogWriter
@@ -16,7 +17,10 @@ import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.structure.StructureFixingParser
 import ai.koog.prompt.structure.executeStructured
+import io.github.cdimascio.dotenv.Dotenv
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.opentelemetry.exporter.logging.LoggingSpanExporter
+import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
@@ -51,6 +55,12 @@ import java.io.File
 class KoogService {
 
     private val logger = KotlinLogging.logger(KoogService::class.java.name)
+
+    companion object {
+        private val dotenv: Dotenv = Dotenv.configure()
+            .ignoreIfMissing()
+            .load()
+    }
 
     private fun buildGithubSystemPrompt(): String {
         return """
@@ -420,6 +430,21 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                             outputPath,
                             { path: Path -> SystemFileSystem.sink(path).buffered() }
                         ))
+                    }
+
+                    install(OpenTelemetry) {
+                        // Always add console logging exporter for debugging
+                        addSpanExporter(LoggingSpanExporter.create())
+
+                        // Optionally add Jaeger exporter if OTEL_EXPORTER_OTLP_ENDPOINT is set
+                        dotenv["OTEL_EXPORTER_OTLP_ENDPOINT"]?.let { endpoint ->
+                            logger.info { "OpenTelemetry: Jaeger exporter enabled at $endpoint" }
+                            addSpanExporter(
+                                OtlpGrpcSpanExporter.builder()
+                                    .setEndpoint(endpoint)
+                                    .build()
+                            )
+                        } ?: logger.info { "OpenTelemetry: Jaeger exporter disabled (OTEL_EXPORTER_OTLP_ENDPOINT not set)" }
                     }
 
                     install(AgentMemory) {
