@@ -4,6 +4,27 @@ package ru.andvl.chatter.desktop.models
  * User actions in the application
  */
 sealed interface GithubAnalysisAction {
+    // Navigation
+    data class NavigateToScreen(val screen: AppScreen) : GithubAnalysisAction
+
+    // Chat actions
+    data class UpdateChatInput(val input: String) : GithubAnalysisAction
+    data class SendChatMessage(val text: String) : GithubAnalysisAction
+    data object StartVoiceRecording : GithubAnalysisAction
+    data object StopVoiceRecording : GithubAnalysisAction
+    data object SendVoiceMessage : GithubAnalysisAction
+    data class PlayVoiceMessage(val messageId: String) : GithubAnalysisAction
+    data class PauseVoiceMessage(val messageId: String) : GithubAnalysisAction
+    data class StopVoicePlayback(val messageId: String) : GithubAnalysisAction
+    data object ClearChat : GithubAnalysisAction
+    data object ClearChatError : GithubAnalysisAction
+
+    // Chat configuration actions
+    data class SelectChatProvider(val provider: ChatProvider) : GithubAnalysisAction
+    data class UpdateChatModel(val model: String) : GithubAnalysisAction
+    data class UpdateChatApiKey(val apiKey: String) : GithubAnalysisAction
+    data class ToggleChatHistorySaving(val enabled: Boolean) : GithubAnalysisAction
+
     /**
      * User changed input text (combined github URL + request)
      */

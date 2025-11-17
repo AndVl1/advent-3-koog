@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import ru.andvl.chatter.desktop.ui.GithubAnalysisScreen
+import ru.andvl.chatter.desktop.ui.MainScreen
 import ru.andvl.chatter.desktop.viewmodel.GithubAnalysisViewModel
 
 fun main() = application {
@@ -21,7 +21,7 @@ fun main() = application {
 
     Window(
         onCloseRequest = ::exitApplication,
-        title = "Chatter - GitHub Repository Analyzer",
+        title = "Chatter - AI Assistant",
         state = windowState
     ) {
         ChatterApp()
@@ -35,7 +35,7 @@ fun ChatterApp() {
             val viewModel = remember { GithubAnalysisViewModel() }
             val state by viewModel.state.collectAsState()
 
-            GithubAnalysisScreen(
+            MainScreen(
                 state = state,
                 onAction = viewModel::dispatch
             )
