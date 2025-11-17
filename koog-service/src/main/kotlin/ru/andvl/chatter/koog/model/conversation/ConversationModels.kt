@@ -10,7 +10,8 @@ data class ConversationRequest(
     val message: String,
     val systemPrompt: String? = null,
     val history: List<Message> = emptyList(),
-    val maxHistoryLength: Int = 10
+    val maxHistoryLength: Int = 10,
+    val audioFilePath: String? = null
 )
 
 /**

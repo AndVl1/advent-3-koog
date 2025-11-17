@@ -257,15 +257,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
     ): ConversationResponse {
         val model: LLModel = when (provider) {
             Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> LLModel(
-                provider = LLMProvider.OpenRouter,
-                id = "qwen/qwen3-coder",
-                capabilities = listOf(
-                    LLMCapability.Temperature,
-                    LLMCapability.Completion,
-                ),
-                contextLength = 16_000,
-            )
+            Provider.OPENROUTER -> OpenRouterModels.Gemini2_5Flash
             else -> OpenRouterModels.Gemini2_5Flash
         }
 

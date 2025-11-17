@@ -11,6 +11,7 @@ import ru.andvl.chatter.desktop.audio.AudioRecorder
 import ru.andvl.chatter.desktop.interactor.GithubAnalysisInteractor
 import ru.andvl.chatter.desktop.models.*
 import ru.andvl.chatter.koog.mapping.toKoogMessage
+import ru.andvl.chatter.koog.model.conversation.ConversationRequest
 import ru.andvl.chatter.shared.models.github.AnalysisEvent
 import ru.andvl.chatter.shared.models.github.AnalysisEventOrResult
 import java.io.File
@@ -449,7 +450,7 @@ class GithubAnalysisViewModel(
                 }
 
                 // Создание ConversationRequest
-                val conversationRequest = ru.andvl.chatter.koog.model.conversation.ConversationRequest(
+                val conversationRequest = ConversationRequest(
                     message = text,
                     history = history,
                     maxHistoryLength = 10
@@ -605,6 +606,9 @@ class GithubAnalysisViewModel(
                                 )
                             )
                         }
+
+                        // Automatically send voice message for transcription
+                        handleSendVoiceMessage()
                     }
                 } else {
                     _state.update {
@@ -633,24 +637,131 @@ class GithubAnalysisViewModel(
     }
 
     private fun handleSendVoiceMessage() {
-        // Voice message is already added to chat when recording stops
-        // This method is kept for future implementation of sending to server
         viewModelScope.launch {
-            // TODO: Add voice message transcription or processing
-            // For now, just show a placeholder response
-            delay(500)
+            val currentChatState = _state.value.chatState
 
-            val assistantMessage = ChatMessage(
-                content = "Voice message processing will be added in the future.",
-                role = MessageRole.ASSISTANT
-            )
+            // Валидация API ключа
+            if (currentChatState.apiKey.isBlank()) {
+                _state.update {
+                    it.copy(
+                        chatState = it.chatState.copy(
+                            error = "API Key is required. Please configure it in Chat Settings."
+                        )
+                    )
+                }
+                return@launch
+            }
 
+            // Получаем последнее голосовое сообщение пользователя
+            val lastVoiceMessage = currentChatState.messages.lastOrNull { it.isVoice && it.role == MessageRole.USER }
+            if (lastVoiceMessage == null || lastVoiceMessage.voiceFilePath == null) {
+                _state.update {
+                    it.copy(
+                        chatState = it.chatState.copy(
+                            error = "Voice message not found"
+                        )
+                    )
+                }
+                return@launch
+            }
+
+            // Устанавливаем состояние загрузки
             _state.update {
                 it.copy(
                     chatState = it.chatState.copy(
-                        messages = it.chatState.messages + assistantMessage
+                        isLoading = true,
+                        error = null
                     )
                 )
+            }
+
+            try {
+                // Вызов Koog service
+                val koogService = ru.andvl.chatter.koog.service.KoogServiceFactory.createFromEnv()
+
+                // Создание PromptExecutor (требуется для KoogService)
+                val timeoutConfig = ai.koog.prompt.executor.clients.ConnectionTimeoutConfig(
+                    requestTimeoutMillis = 120_000,
+                    connectTimeoutMillis = 10_000
+                )
+
+                val llmClient = when (currentChatState.provider) {
+                    ru.andvl.chatter.desktop.models.ChatProvider.GOOGLE -> {
+                        ai.koog.prompt.executor.clients.google.GoogleLLMClient(currentChatState.apiKey)
+                    }
+                    ru.andvl.chatter.desktop.models.ChatProvider.OPENROUTER -> {
+                        ai.koog.prompt.executor.clients.openrouter.OpenRouterLLMClient(
+                            apiKey = currentChatState.apiKey,
+                            settings = ai.koog.prompt.executor.clients.openrouter.OpenRouterClientSettings(
+                                timeoutConfig = timeoutConfig
+                            )
+                        )
+                    }
+                }
+
+                val promptExecutor = ai.koog.prompt.executor.llms.SingleLLMPromptExecutor(llmClient)
+
+                // Преобразование истории в формат Message (исключая последнее голосовое сообщение)
+                val history: List<ai.koog.prompt.message.Message> = currentChatState.messages
+                    .filter { it != lastVoiceMessage }
+                    .takeLast(10)
+                    .map { msg ->
+                        val sharedRole = when (msg.role) {
+                            MessageRole.USER -> ru.andvl.chatter.shared.models.MessageRole.User
+                            MessageRole.ASSISTANT -> ru.andvl.chatter.shared.models.MessageRole.Assistant
+                            MessageRole.SYSTEM -> ru.andvl.chatter.shared.models.MessageRole.System
+                        }
+                        val sharedMessage = ru.andvl.chatter.shared.models.SharedMessage(
+                            role = sharedRole,
+                            content = msg.content,
+                            meta = ru.andvl.chatter.shared.models.MessageMeta(),
+                            timestamp = msg.timestamp
+                        )
+                        sharedMessage.toKoogMessage()
+                    }
+
+                // Создание ConversationRequest с audioFilePath
+                val conversationRequest = ConversationRequest(
+                    message = lastVoiceMessage.content, // Placeholder message
+                    history = history,
+                    maxHistoryLength = 10,
+                    audioFilePath = lastVoiceMessage.voiceFilePath
+                )
+
+                // Определение провайдера
+                val provider = when (currentChatState.provider) {
+                    ru.andvl.chatter.desktop.models.ChatProvider.GOOGLE ->
+                        ru.andvl.chatter.koog.service.Provider.GOOGLE
+                    ru.andvl.chatter.desktop.models.ChatProvider.OPENROUTER ->
+                        ru.andvl.chatter.koog.service.Provider.OPENROUTER
+                }
+
+                // Отправка запроса через conversation с аудио
+                val response = koogService.conversation(conversationRequest, promptExecutor, provider)
+
+                // Добавление ответа ассистента
+                val assistantMessage = ChatMessage(
+                    content = response.text,
+                    role = MessageRole.ASSISTANT
+                )
+
+                _state.update {
+                    it.copy(
+                        chatState = it.chatState.copy(
+                            messages = it.chatState.messages + assistantMessage,
+                            isLoading = false
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        chatState = it.chatState.copy(
+                            error = "Failed to process voice message: ${e.message}",
+                            isLoading = false
+                        )
+                    )
+                }
             }
         }
     }

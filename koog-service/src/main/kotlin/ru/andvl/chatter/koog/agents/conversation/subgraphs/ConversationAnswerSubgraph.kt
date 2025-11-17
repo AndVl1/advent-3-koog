@@ -20,6 +20,9 @@ internal fun AIAgentGraphStrategyBuilder<ConversationRequest, ConversationAgentR
 
 /**
  * Node for generating text answer
+ *
+ * This node only handles text-based conversation.
+ * Audio transcription is handled by audioTranscriptionSubgraph before this node.
  */
 internal fun AIAgentSubgraphBuilderBase<ConversationRequest, ConversationAgentResponse>.conversationAnswerNode(
     systemPrompt: String?
@@ -27,6 +30,7 @@ internal fun AIAgentSubgraphBuilderBase<ConversationRequest, ConversationAgentRe
     val baseSystemPrompt = systemPrompt ?: buildDefaultSystemPrompt()
 
     return node<ConversationRequest, ConversationAgentResponse>("generate_text_answer") { request ->
+        // Generate answer for text message
         llm.writeSession {
             appendPrompt {
                 prompt = getConversationAgentPrompt(

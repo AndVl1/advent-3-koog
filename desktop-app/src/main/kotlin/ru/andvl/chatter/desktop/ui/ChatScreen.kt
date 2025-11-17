@@ -335,7 +335,6 @@ private fun ChatInputArea(
             onClick = {
                 if (chatState.isRecording) {
                     onAction(GithubAnalysisAction.StopVoiceRecording)
-                    onAction(GithubAnalysisAction.SendVoiceMessage)
                 } else {
                     onAction(GithubAnalysisAction.StartVoiceRecording)
                 }

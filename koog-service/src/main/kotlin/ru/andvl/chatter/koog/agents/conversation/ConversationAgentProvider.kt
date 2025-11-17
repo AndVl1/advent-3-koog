@@ -10,6 +10,7 @@ import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.params.LLMParams
 import ru.andvl.chatter.koog.agents.conversation.subgraphs.conversationAnswerSubgraph
+import ru.andvl.chatter.koog.agents.conversation.subgraphs.nodeTranscribeAudio
 import ru.andvl.chatter.koog.agents.utils.isHistoryTooLong
 import ru.andvl.chatter.koog.agents.utils.nodeLLMCPrintCompressedHistory
 import ru.andvl.chatter.koog.model.conversation.ConversationRequest
@@ -40,8 +41,10 @@ internal fun getConversationAgentPrompt(
             text(systemPrompt)
         }
         messages(request.history)
-        user {
-            text(request.message)
+        if (request.audioFilePath == null) {
+            user {
+                text(request.message)
+            }
         }
     }
 }
@@ -49,32 +52,42 @@ internal fun getConversationAgentPrompt(
 /**
  * Build conversation strategy
  *
- * Simple strategy with one node that generates text response.
- * Can be extended in the future with additional nodes for:
- * - Intent analysis
- * - Multi-turn reasoning
- * - Tool usage
- * - etc.
+ * Strategy flow:
+ * 1. Transcribe audio if present (transcribeAudio node - passes through if no audio)
+ * 2. If history too long → compress it (tldrHistory)
+ * 3. Generate answer (answer subgraph)
+ *
+ * Audio transcription:
+ * - Always runs first but quickly passes through if audioFilePath is null
+ * - If audio present: transcribes to text and updates request.message, clears audioFilePath
+ * - After transcription, request is treated as text message
  */
 internal fun getConversationAgentStrategy(
     mainSystemPrompt: String? = null,
 ): AIAgentGraphStrategy<ConversationRequest, ConversationAgentResponse> = strategy("conversation") {
 
-    // Main subgraph - generates text response with history
+    // Audio transcription node - always runs, but passes through if no audio
+    val transcribeAudio by nodeTranscribeAudio<ConversationRequest>("transcribe_audio")
+
+    // Main answer subgraph - generates text response
     val answer: AIAgentSubgraph<ConversationRequest, ConversationAgentResponse> by conversationAnswerSubgraph(mainSystemPrompt)
 
-    // Optional: compress history if it's too long
+    // History compression (if needed)
     val tldrHistory by nodeLLMCompressHistory<ConversationRequest>("tldr")
     val printCompressedHistory by nodeLLMCPrintCompressedHistory<ConversationRequest>("print_compressed")
 
-    // Start with answer generation if history is short
-    edge(nodeStart forwardTo answer onCondition { !isHistoryTooLong() })
+    // === FLOW ===
+    // 1. Always transcribe audio first (passes through if no audio)
+    edge(nodeStart forwardTo transcribeAudio)
 
-    // Compress history first if it's too long
-    edge(nodeStart forwardTo tldrHistory onCondition { isHistoryTooLong() })
+    // 2. After transcription → check history length
+    edge(transcribeAudio forwardTo answer onCondition { !isHistoryTooLong() })
+    edge(transcribeAudio forwardTo tldrHistory onCondition { isHistoryTooLong() })
+
+    // 3. History compression → answer
     edge(tldrHistory forwardTo printCompressedHistory)
     edge(printCompressedHistory forwardTo answer)
 
-    // Finish with the answer
+    // 4. Answer → finish
     edge(answer forwardTo nodeFinish)
 }
