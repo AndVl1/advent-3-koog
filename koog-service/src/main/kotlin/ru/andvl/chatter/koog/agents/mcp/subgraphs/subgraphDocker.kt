@@ -12,6 +12,7 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.StructureFixingParser
 import org.slf4j.LoggerFactory
+import ru.andvl.chatter.koog.agents.mcp.GithubAnalysisNodes
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
 import ru.andvl.chatter.koog.agents.utils.getLatestTotalTokenUsage
 import ru.andvl.chatter.koog.model.common.TokenUsage
@@ -27,10 +28,10 @@ private val logger = LoggerFactory.getLogger("docker-subgraph")
 internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphDocker(
     fixingModel: LLModel
 ): AIAgentSubgraphDelegate<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse> =
-    subgraph("docker-build") {
+    subgraph(GithubAnalysisNodes.Subgraphs.DOCKER_BUILD) {
         val nodeDockerRequest by nodeDockerRequest()
-        val nodeExecuteTool by nodeExecuteTool()
-        val nodeSendToolResult by nodeLLMSendToolResult("send-tool")
+        val nodeExecuteTool by nodeExecuteTool(GithubAnalysisNodes.DockerBuild.DOCKER_EXECUTE_TOOL)
+        val nodeSendToolResult by nodeLLMSendToolResult(GithubAnalysisNodes.DockerBuild.DOCKER_SEND_TOOL_RESULT)
         val nodeProcessResult by nodeProcessResult(fixingModel)
 
         // Check forceSkipDocker flag - if true, skip Docker build entirely
@@ -89,7 +90,7 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
     }
 
 private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeDockerRequest() =
-    node<GithubRepositoryAnalysisModel.SuccessAnalysisModel, Message.Response>("docker-request") { analysisResult ->
+    node<GithubRepositoryAnalysisModel.SuccessAnalysisModel, Message.Response>(GithubAnalysisNodes.DockerBuild.DOCKER_REQUEST) { analysisResult ->
         storage.set(dockerAnalysisKey, analysisResult)
 
         if (analysisResult.dockerEnv == null) {
@@ -175,7 +176,7 @@ private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnal
 private fun AIAgentSubgraphBuilderBase<GithubRepositoryAnalysisModel.SuccessAnalysisModel, ToolChatResponse>.nodeProcessResult(
     fixingModel: LLModel
 ) =
-    node<String, ToolChatResponse>("process-docker-result") { rawDockerData ->
+    node<String, ToolChatResponse>(GithubAnalysisNodes.DockerBuild.PROCESS_DOCKER_RESULT) { rawDockerData ->
         val analysisResult = storage.get(dockerAnalysisKey)!!
         val requirements = storage.get(requirementsKey)
         val toolCalls = storage.get(toolCallsKey).orEmpty()

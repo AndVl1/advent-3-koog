@@ -12,11 +12,14 @@ import ai.koog.prompt.executor.clients.retry.RetryingLLMClient
 import ai.koog.prompt.executor.llms.SingleLLMPromptExecutor
 import ai.koog.prompt.executor.model.PromptExecutor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import ru.andvl.chatter.desktop.models.AnalysisConfig
 import ru.andvl.chatter.desktop.models.LLMProvider
 import ru.andvl.chatter.desktop.utils.customOpenAICompatibleClient
 import ru.andvl.chatter.koog.service.KoogService
+import ru.andvl.chatter.shared.models.github.AnalysisEventOrResult
 import ru.andvl.chatter.shared.models.github.GithubAnalysisRequest
 import ru.andvl.chatter.shared.models.github.GithubAnalysisResponse
 import ru.andvl.chatter.shared.models.github.LLMConfig
@@ -62,6 +65,34 @@ class GithubAnalysisRepository {
                 Result.failure(e)
             }
         }
+    }
+
+    /**
+     * Analyze GitHub repository with streaming events
+     */
+    fun analyzeGithubRepositoryWithEvents(config: AnalysisConfig): Flow<AnalysisEventOrResult> {
+        val promptExecutor = createPromptExecutor(config)
+        val request = GithubAnalysisRequest(
+            userMessage = config.userInput,
+            googleSheetsUrl = if (config.attachGoogleSheets && config.googleSheetsUrl.isNotBlank()) {
+                config.googleSheetsUrl
+            } else null,
+            forceSkipDocker = config.forceSkipDocker,
+            enableEmbeddings = config.enableEmbeddings
+        )
+
+        val llmConfig = LLMConfig(
+            provider = config.llmProvider.name,
+            model = config.selectedModel,
+            apiKey = config.apiKey,
+            baseUrl = config.customBaseUrl,
+            fixingModel = config.fixingModel,
+            maxContextTokens = config.maxContextTokens,
+            fixingMaxContextTokens = config.fixingMaxContextTokens
+        )
+
+        return koogService.analyseGithubWithEvents(promptExecutor, request, llmConfig)
+            .flowOn(Dispatchers.IO)
     }
 
     /**

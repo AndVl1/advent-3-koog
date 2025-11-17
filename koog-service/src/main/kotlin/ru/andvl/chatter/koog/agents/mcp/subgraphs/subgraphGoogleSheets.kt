@@ -10,6 +10,7 @@ import ai.koog.agents.core.environment.executeTool
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.message.Message
 import org.slf4j.LoggerFactory
+import ru.andvl.chatter.koog.agents.mcp.GithubAnalysisNodes
 import ru.andvl.chatter.koog.agents.mcp.toolCallsKey
 import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
@@ -34,7 +35,7 @@ private val logger = LoggerFactory.getLogger("google-sheets-subgraph")
 internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.subgraphGoogleSheets():
         AIAgentSubgraphDelegate<ToolChatResponse, ToolChatResponse> =
     subgraph(
-        "google-sheets-population",
+        GithubAnalysisNodes.Subgraphs.GOOGLE_SHEETS,
         tools = McpProvider.getGoogleDocsToolsRegistry().tools
     ) {
         val nodeCheckGoogleSheets by nodeCheckGoogleSheets()
@@ -77,7 +78,7 @@ internal suspend fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResp
     }
 
 private fun AIAgentSubgraphBuilderBase<ToolChatResponse, ToolChatResponse>.nodeCheckGoogleSheets() =
-    node<ToolChatResponse, ToolChatResponse>("check-google-sheets") { analysisResult ->
+    node<ToolChatResponse, ToolChatResponse>(GithubAnalysisNodes.GoogleSheets.CHECK_GOOGLE_SHEETS) { analysisResult ->
         // Store analysis result for later use
         storage.set(googleSheetsAnalysisKey, analysisResult)
 
@@ -96,7 +97,7 @@ private fun AIAgentSubgraphBuilderBase<ToolChatResponse, ToolChatResponse>.nodeC
     }
 
 private fun AIAgentSubgraphBuilderBase<ToolChatResponse, ToolChatResponse>.nodeAnalyzeSheetStructure() =
-    node<ToolChatResponse, Message.Response>("analyze-sheet-structure") { analysisResult ->
+    node<ToolChatResponse, Message.Response>(GithubAnalysisNodes.GoogleSheets.ANALYZE_SHEET_STRUCTURE) { analysisResult ->
         val googleSheetsUrl = storage.get(googleSheetsUrlKey) ?: ""
 
         // Extract spreadsheet ID from URL
@@ -171,7 +172,7 @@ private fun AIAgentSubgraphBuilderBase<ToolChatResponse, ToolChatResponse>.nodeA
     }
 
 private fun AIAgentSubgraphBuilderBase<ToolChatResponse, ToolChatResponse>.nodePopulateSheetData() =
-    node<String, Message.Response>("populate-sheet-data") { structureAnalysisResponse ->
+    node<String, Message.Response>(GithubAnalysisNodes.GoogleSheets.POPULATE_SHEET_DATA) { structureAnalysisResponse ->
         val googleSheetsUrl = storage.get(googleSheetsUrlKey) ?: ""
         val spreadsheetId = extractSpreadsheetId(googleSheetsUrl) ?: ""
         val analysisResult = storage.get(googleSheetsAnalysisKey)
@@ -304,7 +305,7 @@ private fun AIAgentSubgraphBuilderBase<ToolChatResponse, ToolChatResponse>.nodeP
     }
 
 private fun AIAgentSubgraphBuilderBase<ToolChatResponse, ToolChatResponse>.nodeFinalizeResponse() =
-    node<String, ToolChatResponse>("finalize-google-sheets-response") { llmResponse ->
+    node<String, ToolChatResponse>(GithubAnalysisNodes.GoogleSheets.FINALIZE_GOOGLE_SHEETS) { llmResponse ->
         val toolCalls = storage.get(toolCallsKey).orEmpty()
         logger.info("✅ Google Sheets population completed")
         logger.info("LLM Response: ${llmResponse.take(200)}...")

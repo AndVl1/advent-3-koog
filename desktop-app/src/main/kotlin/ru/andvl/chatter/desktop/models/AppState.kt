@@ -1,5 +1,6 @@
 package ru.andvl.chatter.desktop.models
 
+import ru.andvl.chatter.shared.models.github.AnalysisEvent
 import ru.andvl.chatter.shared.models.github.GithubAnalysisResponse
 
 /**
@@ -27,7 +28,14 @@ data class AppState(
     val enableEmbeddings: Boolean = false,
     val isLoading: Boolean = false,
     val analysisResult: GithubAnalysisResponse? = null,
-    val error: String? = null
+    val error: String? = null,
+    // Streaming analysis events
+    val currentEvent: AnalysisEvent? = null,
+    val analysisProgress: Int = 0,
+    val currentStep: Int = 0,         // Текущий шаг анализа
+    val totalSteps: Int = 6,          // Всего шагов
+    val currentStepName: String = "", // Название текущего шага
+    val recentEvents: List<AnalysisEvent> = emptyList()
 )
 
 /**
@@ -56,7 +64,7 @@ enum class LLMProvider(
         ),
         modelMaxContextTokens = mapOf(
             "z-ai/glm-4.6" to 100_000L,
-            "qwen/qwen3-coder" to 32_000L,
+            "qwen/qwen3-coder" to 200_000L,
             "google/gemini-2.5-flash" to 1_000_000L,
             "z-ai/glm-4.5-air" to 100_000L,
             "z-ai/glm-4.5-air:free" to 100_000L,

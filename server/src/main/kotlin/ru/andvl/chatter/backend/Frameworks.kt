@@ -27,6 +27,7 @@ import ru.andvl.chatter.koog.model.structured.ChatRequest
 import ru.andvl.chatter.koog.model.structured.ChatResponse
 import ru.andvl.chatter.koog.service.KoogServiceFactory
 import ru.andvl.chatter.koog.service.Provider
+import ru.andvl.chatter.shared.models.github.AnalysisEventOrResult
 import ru.andvl.chatter.shared.models.github.GithubAnalysisRequest
 import ru.andvl.chatter.shared.models.github.GithubAnalysisResponse
 import kotlin.random.Random
@@ -189,6 +190,88 @@ fun Application.configureFrameworks() {
                     call.respond(
                         HttpStatusCode.InternalServerError,
                         mapOf("error" to (e.message ?: "Unknown error"))
+                    )
+                }
+            }
+
+            // SSE endpoint for GitHub analysis with streaming events
+            sse("/analyze-github-stream") {
+                try {
+                    log.info("SSE client connected to /analyze-github-stream")
+
+                    // Get request from query parameters or expect it to be sent as first message
+                    // For simplicity, we'll expect the request in query params encoded as JSON
+                    val requestJson = call.request.queryParameters["request"]
+                        ?: throw IllegalArgumentException("Missing 'request' query parameter")
+
+                    val request = Json.decodeFromString<GithubAnalysisRequest>(requestJson)
+                    log.info("Received GitHub streaming analysis request: ${request.userMessage.take(100)}...")
+
+                    val koogService = KoogServiceFactory.createFromEnv()
+
+                    // Get PromptExecutor from Koog plugin
+                    val promptExecutor = requireNotNull(call.application.pluginOrNull(Koog)) {
+                        "Plugin Koog is not configured"
+                    }.promptExecutor
+
+                    // Default LLM configuration for server
+                    val defaultLLMConfig = ru.andvl.chatter.shared.models.github.LLMConfig(
+                        provider = "OPEN_ROUTER",
+                        model = "z-ai/glm-4.6",
+                        apiKey = null,
+                        baseUrl = null,
+                        fixingModel = "z-ai/glm-4.6"
+                    )
+
+                    // Stream analysis events
+                    koogService.analyseGithubWithEvents(promptExecutor, request, defaultLLMConfig)
+                        .collect { eventOrResult ->
+                            when (eventOrResult) {
+                                is AnalysisEventOrResult.Event -> {
+                                    send(
+                                        data = Json.encodeToString(
+                                            AnalysisEventOrResult.Event.serializer(),
+                                            eventOrResult
+                                        ),
+                                        event = "analysis-event"
+                                    )
+                                    log.info("Sent analysis event: ${eventOrResult.event}")
+                                }
+                                is AnalysisEventOrResult.Result -> {
+                                    send(
+                                        data = Json.encodeToString(
+                                            AnalysisEventOrResult.Result.serializer(),
+                                            eventOrResult
+                                        ),
+                                        event = "analysis-result"
+                                    )
+                                    log.info("Sent final analysis result")
+                                }
+                                is AnalysisEventOrResult.Error -> {
+                                    send(
+                                        data = Json.encodeToString(
+                                            AnalysisEventOrResult.Error.serializer(),
+                                            eventOrResult
+                                        ),
+                                        event = "analysis-error"
+                                    )
+                                    log.error("Analysis error: ${eventOrResult.message}")
+                                }
+                            }
+                        }
+
+                    log.info("SSE stream for GitHub analysis completed")
+                } catch (e: Exception) {
+                    log.error("Error in GitHub analysis SSE stream", e)
+                    send(
+                        data = Json.encodeToString(
+                            AnalysisEventOrResult.Error.serializer(),
+                            AnalysisEventOrResult.Error(
+                                message = e.message ?: "Unknown error",
+                                stackTrace = e.stackTraceToString()
+                            )
+                        ),
+                        event = "analysis-error"
                     )
                 }
             }

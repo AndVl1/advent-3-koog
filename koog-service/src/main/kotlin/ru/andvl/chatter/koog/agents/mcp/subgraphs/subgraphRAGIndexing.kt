@@ -6,6 +6,7 @@ import ai.koog.agents.core.dsl.builder.AIAgentSubgraphBuilderBase
 import ai.koog.agents.core.dsl.builder.AIAgentSubgraphDelegate
 import ai.koog.agents.core.dsl.builder.forwardTo
 import org.slf4j.LoggerFactory
+import ru.andvl.chatter.koog.agents.mcp.GithubAnalysisNodes
 import ru.andvl.chatter.koog.embeddings.model.EmbeddingConfig
 import ru.andvl.chatter.koog.embeddings.rag.RAGService
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
@@ -28,7 +29,7 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
     config: EmbeddingConfig,
     storageRoot: Path
 ): AIAgentSubgraphDelegate<InitialPromptAnalysisModel.SuccessAnalysisModel, InitialPromptAnalysisModel.SuccessAnalysisModel> =
-    subgraph("rag-indexing") {
+    subgraph(GithubAnalysisNodes.Subgraphs.RAG_INDEXING) {
         val nodeInitializeRAG by nodeInitializeRAG(config, storageRoot)
         val nodeCloneAndIndex by nodeCloneAndIndex()
 
@@ -51,7 +52,7 @@ internal fun AIAgentGraphStrategyBuilder<GithubChatRequest, ToolChatResponse>.su
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeInitializeRAG(
     config: EmbeddingConfig,
     storageRoot: Path
-) = node<InitialPromptAnalysisModel.SuccessAnalysisModel, InitialPromptAnalysisModel.SuccessAnalysisModel>("initialize-rag") { initialAnalysis ->
+) = node<InitialPromptAnalysisModel.SuccessAnalysisModel, InitialPromptAnalysisModel.SuccessAnalysisModel>(GithubAnalysisNodes.RAGIndexing.INITIALIZE_RAG) { initialAnalysis ->
     // Store config for later use in GitHub analysis
     storage.set(embeddingConfigKey, config)
 
@@ -77,7 +78,7 @@ private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysi
 }
 
 private fun AIAgentSubgraphBuilderBase<InitialPromptAnalysisModel.SuccessAnalysisModel, InitialPromptAnalysisModel.SuccessAnalysisModel>.nodeCloneAndIndex() =
-    node<InitialPromptAnalysisModel.SuccessAnalysisModel, InitialPromptAnalysisModel.SuccessAnalysisModel>("clone-and-index") { initialAnalysis ->
+    node<InitialPromptAnalysisModel.SuccessAnalysisModel, InitialPromptAnalysisModel.SuccessAnalysisModel>(GithubAnalysisNodes.RAGIndexing.CLONE_AND_INDEX) { initialAnalysis ->
         val ragService = storage.get(ragServiceKey)
 
         if (ragService == null) {
