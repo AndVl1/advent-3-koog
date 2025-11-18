@@ -25,6 +25,12 @@ internal inline fun <reified T> AIAgentSubgraphBuilderBase<*, *>.nodeTranscribeA
     // If no audio, pass through unchanged
     if (request.audioFilePath == null) {
         println("📝 No audio file, skipping transcription")
+        llm.writeSession {
+            appendPrompt {
+                messages(request.history)
+                user(request.message)
+            }
+        }
         return@node request
     }
 
@@ -80,15 +86,13 @@ internal inline fun <reified T> AIAgentSubgraphBuilderBase<*, *>.nodeTranscribeA
         rewritePrompt {
             prompt(
                 Prompt(
-                    emptyList(),
+                    originalMessages,
                     "conversation",
                     params = LLMParams(temperature = 0.7)
                 )
             ) {
-                messages(originalMessages)
-                user {
-                    text(transcribedText)
-                }
+                messages(request.history)
+                user(transcribedText)
             }
         }
 

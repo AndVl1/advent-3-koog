@@ -2,6 +2,7 @@ package ru.andvl.chatter.desktop.models
 
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import ru.andvl.chatter.core.model.conversation.PersonalizationConfig
 
 /**
  * Chat message model
@@ -75,7 +76,10 @@ data class ChatState(
 
     // History saving
     val saveHistoryEnabled: Boolean = true,
-    val historyFilePath: String = "./chat_history.json"
+    val historyFilePath: String = "./chat_history.json",
+
+    // Personalization
+    val personalizationConfig: PersonalizationConfig = PersonalizationConfig.DEFAULT
 )
 
 /**

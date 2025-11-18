@@ -1,5 +1,7 @@
 package ru.andvl.chatter.desktop.models
 
+import ru.andvl.chatter.core.model.conversation.PersonalizationConfig
+
 /**
  * User actions in the application
  */
@@ -24,6 +26,7 @@ sealed interface GithubAnalysisAction {
     data class UpdateChatModel(val model: String) : GithubAnalysisAction
     data class UpdateChatApiKey(val apiKey: String) : GithubAnalysisAction
     data class ToggleChatHistorySaving(val enabled: Boolean) : GithubAnalysisAction
+    data class UpdatePersonalization(val config: PersonalizationConfig) : GithubAnalysisAction
 
     /**
      * User changed input text (combined github URL + request)
