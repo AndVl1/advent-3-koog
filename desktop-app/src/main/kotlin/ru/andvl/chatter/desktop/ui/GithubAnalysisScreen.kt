@@ -26,9 +26,6 @@ fun GithubAnalysisScreen(
     var saveMessage by remember { mutableStateOf<String?>(null) }
     val clipboardManager = LocalClipboardManager.current
 
-    Scaffold {
-
-    }
     LazyColumn(
         modifier = modifier
             .fillMaxSize(),
@@ -44,7 +41,7 @@ fun GithubAnalysisScreen(
         }
 
         item("divider") {
-            Divider()
+            HorizontalDivider()
         }
 
         item("input") {

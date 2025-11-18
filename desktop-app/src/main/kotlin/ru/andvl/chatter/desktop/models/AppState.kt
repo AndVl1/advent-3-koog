@@ -7,6 +7,10 @@ import ru.andvl.chatter.shared.models.github.GithubAnalysisResponse
  * Application UI state
  */
 data class AppState(
+    // Navigation
+    val currentScreen: AppScreen = AppScreen.GITHUB_ANALYSIS,
+
+    // GitHub Analysis state
     val userInput: String = "",
     val apiKey: String = "",
     val llmProvider: LLMProvider = LLMProvider.OPEN_ROUTER,
@@ -35,7 +39,10 @@ data class AppState(
     val currentStep: Int = 0,         // Текущий шаг анализа
     val totalSteps: Int = 6,          // Всего шагов
     val currentStepName: String = "", // Название текущего шага
-    val recentEvents: List<AnalysisEvent> = emptyList()
+    val recentEvents: List<AnalysisEvent> = emptyList(),
+
+    // Chat state
+    val chatState: ChatState = ChatState()
 )
 
 /**

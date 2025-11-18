@@ -31,6 +31,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import ru.andvl.chatter.koog.agents.conversation.getConversationAgentPrompt
+import ru.andvl.chatter.koog.agents.conversation.getConversationAgentStrategy
 import ru.andvl.chatter.koog.agents.mcp.GithubAnalysisNodes
 import ru.andvl.chatter.koog.agents.mcp.getGithubAnalysisStrategy
 import ru.andvl.chatter.koog.agents.mcp.getToolAgentPrompt
@@ -41,6 +43,8 @@ import ru.andvl.chatter.koog.agents.utils.createFixingModel
 import ru.andvl.chatter.koog.embeddings.model.EmbeddingConfig
 import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.common.TokenUsage
+import ru.andvl.chatter.koog.model.conversation.ConversationRequest
+import ru.andvl.chatter.koog.model.conversation.ConversationResponse
 import ru.andvl.chatter.koog.model.structured.ChatRequest
 import ru.andvl.chatter.koog.model.structured.ChatResponse
 import ru.andvl.chatter.koog.model.structured.StructuredResponse
@@ -181,7 +185,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     id = "structured_agent",
                     installFeatures = {
                         install(Tracing) {
-                            val outputPath = Path("/logs/koog_trace.log")
+                            val outputPath = Path("./logs/koog_chat_trace.log")
                             addMessageProcessor(TraceFeatureMessageLogWriter(logger))
                             addMessageProcessor(TraceFeatureMessageFileWriter(
                                 outputPath,
@@ -228,6 +232,88 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 } catch (e2: Exception) {
                     throw Exception("Both providers failed: ${e2.message}", e2)
                 }
+            }
+        }
+    }
+
+    /**
+     * Conversation method for simple text-based chat
+     *
+     * This is a simplified conversation method that:
+     * - Takes text message and history
+     * - Returns text response
+     * - Maintains conversation context
+     * - Can be extended with additional features in the future
+     *
+     * @param request Conversation request with message and history
+     * @param promptExecutor Prompt executor for LLM calls
+     * @param provider LLM provider to use
+     * @return ConversationResponse with text and metadata
+     */
+    suspend fun conversation(
+        request: ConversationRequest,
+        promptExecutor: PromptExecutor,
+        provider: Provider? = null,
+    ): ConversationResponse {
+        val model: LLModel = when (provider) {
+            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
+            Provider.OPENROUTER -> OpenRouterModels.Gemini2_5Flash
+            else -> OpenRouterModels.Gemini2_5Flash
+        }
+
+        return withContext(Dispatchers.IO) {
+            val systemPrompt = request.systemPrompt ?: "You are a helpful AI assistant."
+
+            val prompt = getConversationAgentPrompt(
+                systemPrompt = systemPrompt,
+                request = request,
+                temperature = 0.7
+            )
+
+            try {
+                val strategy = getConversationAgentStrategy(systemPrompt)
+                val agentConfig = AIAgentConfig(
+                    prompt = prompt,
+                    model = model,
+                    maxAgentIterations = 10,
+                )
+
+                val agent = AIAgent(
+                    promptExecutor = promptExecutor,
+                    toolRegistry = ToolRegistry {},
+                    strategy = strategy,
+                    agentConfig = agentConfig,
+                    id = "conversation_agent",
+                    installFeatures = {
+                        install(Tracing) {
+                            val outputPath = Path("./logs/koog_conversation_trace.log")
+                            addMessageProcessor(TraceFeatureMessageLogWriter(logger))
+                            addMessageProcessor(TraceFeatureMessageFileWriter(
+                                outputPath,
+                                { path: Path -> SystemFileSystem.sink(path).buffered() }
+                            ))
+                        }
+                    }
+                )
+
+                val result = agent.run(request)
+                val assistantMessage = result.getOrNull()
+
+                ConversationResponse(
+                    text = assistantMessage?.content ?: "Sorry, I couldn't generate a response.",
+                    originalMessage = assistantMessage,
+                    model = model.id,
+                    usage = assistantMessage?.metaInfo?.let {
+                        TokenUsage(
+                            promptTokens = it.inputTokensCount ?: 0,
+                            completionTokens = it.outputTokensCount ?: 0,
+                            totalTokens = it.totalTokensCount ?: 0,
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                logger.error(e) { "Conversation failed" }
+                throw Exception("Conversation failed: ${e.message}", e)
             }
         }
     }
