@@ -9,12 +9,15 @@ import ai.koog.agents.features.tracing.feature.Tracing
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageFileWriter
 import ai.koog.agents.features.tracing.writer.TraceFeatureMessageLogWriter
 import ai.koog.agents.memory.feature.AgentMemory
+import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.clients.openrouter.OpenRouterModels
 import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.params.LLMParams
 import ai.koog.prompt.structure.StructureFixingParser
 import ai.koog.prompt.structure.executeStructured
 import io.github.cdimascio.dotenv.Dotenv
@@ -31,7 +34,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import ru.andvl.chatter.koog.agents.conversation.getConversationAgentPrompt
 import ru.andvl.chatter.koog.agents.conversation.getConversationAgentStrategy
 import ru.andvl.chatter.koog.agents.mcp.GithubAnalysisNodes
 import ru.andvl.chatter.koog.agents.mcp.getGithubAnalysisStrategy
@@ -262,18 +264,16 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         }
 
         return withContext(Dispatchers.IO) {
-            val systemPrompt = request.systemPrompt ?: "You are a helpful AI assistant."
-
-            val prompt = getConversationAgentPrompt(
-                systemPrompt = systemPrompt,
-                request = request,
-                temperature = 0.7
-            )
+            // Let the strategy nodes build their own prompts with personalization
+            // This empty prompt is just a placeholder for the AIAgentConfig
+            val emptyPrompt = prompt(
+                Prompt(emptyList(), "conversation", params = LLMParams())
+            ) {}
 
             try {
-                val strategy = getConversationAgentStrategy(systemPrompt)
+                val strategy = getConversationAgentStrategy(mainSystemPrompt = null)
                 val agentConfig = AIAgentConfig(
-                    prompt = prompt,
+                    prompt = emptyPrompt,
                     model = model,
                     maxAgentIterations = 10,
                 )

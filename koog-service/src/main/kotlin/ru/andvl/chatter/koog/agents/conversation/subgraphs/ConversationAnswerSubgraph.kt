@@ -3,7 +3,6 @@ package ru.andvl.chatter.koog.agents.conversation.subgraphs
 import ai.koog.agents.core.dsl.builder.*
 import ai.koog.prompt.message.Message
 import ru.andvl.chatter.koog.agents.conversation.ConversationAgentResponse
-import ru.andvl.chatter.koog.agents.conversation.getConversationAgentPrompt
 import ru.andvl.chatter.koog.model.conversation.ConversationRequest
 
 /**
@@ -27,17 +26,15 @@ internal fun AIAgentGraphStrategyBuilder<ConversationRequest, ConversationAgentR
 internal fun AIAgentSubgraphBuilderBase<ConversationRequest, ConversationAgentResponse>.conversationAnswerNode(
     systemPrompt: String?
 ): AIAgentNodeDelegate<ConversationRequest, ConversationAgentResponse> {
-    val baseSystemPrompt = systemPrompt ?: buildDefaultSystemPrompt()
 
     return node<ConversationRequest, ConversationAgentResponse>("generate_text_answer") { request ->
+        val baseSystemPrompt = systemPrompt ?: buildDefaultSystemPrompt(request)
         // Generate answer for text message
         llm.writeSession {
             appendPrompt {
-                prompt = getConversationAgentPrompt(
-                    systemPrompt = baseSystemPrompt,
-                    request = request,
-                    temperature = 0.7
-                )
+                system {
+                    text(baseSystemPrompt)
+                }
             }
             requestLLM()
         }.let { response ->
@@ -57,8 +54,8 @@ internal fun AIAgentSubgraphBuilderBase<ConversationRequest, ConversationAgentRe
 /**
  * Build default system prompt for conversation
  */
-private fun buildDefaultSystemPrompt(): String {
-    return """
+private fun buildDefaultSystemPrompt(request: ConversationRequest): String {
+    val basePrompt = """
         You are a helpful AI assistant engaged in a natural conversation with a user.
 
         Your role is to:
@@ -74,4 +71,17 @@ private fun buildDefaultSystemPrompt(): String {
         - Remember and reference previous messages when relevant
         - Ask clarifying questions if needed
     """.trimIndent()
+
+    // Add personalization section if enabled
+    val personalizationSection = request.personalization.toSystemPromptSection()
+
+    return if (personalizationSection != null) {
+        buildString {
+            appendLine(basePrompt)
+            appendLine()
+            appendLine(personalizationSection)
+        }.trim()
+    } else {
+        basePrompt
+    }
 }

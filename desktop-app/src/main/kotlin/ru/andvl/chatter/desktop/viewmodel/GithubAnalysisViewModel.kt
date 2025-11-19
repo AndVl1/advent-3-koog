@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.datetime.Clock
+import ru.andvl.chatter.core.model.conversation.PersonalizationConfig
 import ru.andvl.chatter.desktop.audio.AudioRecorder
 import ru.andvl.chatter.desktop.interactor.GithubAnalysisInteractor
 import ru.andvl.chatter.desktop.models.*
@@ -92,6 +93,7 @@ class GithubAnalysisViewModel(
             is GithubAnalysisAction.UpdateChatModel -> handleUpdateChatModel(action.model)
             is GithubAnalysisAction.UpdateChatApiKey -> handleUpdateChatApiKey(action.apiKey)
             is GithubAnalysisAction.ToggleChatHistorySaving -> handleToggleChatHistorySaving(action.enabled)
+            is GithubAnalysisAction.UpdatePersonalization -> handleUpdatePersonalization(action.config)
 
             // GitHub Analysis actions
             is GithubAnalysisAction.UpdateUserInput -> handleUpdateUserInput(action.input)
@@ -453,7 +455,8 @@ class GithubAnalysisViewModel(
                 val conversationRequest = ConversationRequest(
                     message = text,
                     history = history,
-                    maxHistoryLength = 10
+                    maxHistoryLength = 10,
+                    personalization = currentChatState.personalizationConfig
                 )
 
                 // Определение провайдера
@@ -725,7 +728,8 @@ class GithubAnalysisViewModel(
                     message = lastVoiceMessage.content, // Placeholder message
                     history = history,
                     maxHistoryLength = 10,
-                    audioFilePath = lastVoiceMessage.voiceFilePath
+                    audioFilePath = lastVoiceMessage.voiceFilePath,
+                    personalization = currentChatState.personalizationConfig
                 )
 
                 // Определение провайдера
@@ -930,6 +934,14 @@ class GithubAnalysisViewModel(
         _state.update {
             it.copy(
                 chatState = it.chatState.copy(saveHistoryEnabled = enabled)
+            )
+        }
+    }
+
+    private fun handleUpdatePersonalization(config: PersonalizationConfig) {
+        _state.update {
+            it.copy(
+                chatState = it.chatState.copy(personalizationConfig = config)
             )
         }
     }

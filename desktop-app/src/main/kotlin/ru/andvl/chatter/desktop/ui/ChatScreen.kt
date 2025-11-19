@@ -21,6 +21,7 @@ import ru.andvl.chatter.desktop.models.ChatMessage
 import ru.andvl.chatter.desktop.models.ChatState
 import ru.andvl.chatter.desktop.models.GithubAnalysisAction
 import ru.andvl.chatter.desktop.models.MessageRole
+import ru.andvl.chatter.desktop.ui.chat.PersonalizationConfigCard
 import ru.andvl.chatter.desktop.ui.components.ChatConfigSection
 
 /**
@@ -62,6 +63,13 @@ fun ChatScreen(
         }
 
         HorizontalDivider()
+
+        // Personalization Configuration
+        PersonalizationConfigCard(
+            config = chatState.personalizationConfig,
+            onConfigChange = { onAction(GithubAnalysisAction.UpdatePersonalization(it)) },
+            isConversationStarted = chatState.messages.isNotEmpty()
+        )
 
         // Chat Configuration
         ChatConfigSection(

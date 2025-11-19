@@ -1,6 +1,7 @@
 package ru.andvl.chatter.koog.model.conversation
 
 import ai.koog.prompt.message.Message
+import ru.andvl.chatter.core.model.conversation.PersonalizationConfig
 import ru.andvl.chatter.koog.model.common.TokenUsage
 
 /**
@@ -11,7 +12,8 @@ data class ConversationRequest(
     val systemPrompt: String? = null,
     val history: List<Message> = emptyList(),
     val maxHistoryLength: Int = 10,
-    val audioFilePath: String? = null
+    val audioFilePath: String? = null,
+    val personalization: PersonalizationConfig = PersonalizationConfig.DEFAULT
 )
 
 /**
