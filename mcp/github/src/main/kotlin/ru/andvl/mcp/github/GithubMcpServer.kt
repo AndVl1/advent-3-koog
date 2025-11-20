@@ -23,6 +23,7 @@ object GithubMcpServer {
         val dotenv = dotenv { ignoreIfMissing = true }
         val githubToken: String? = dotenv["GITHUB_TOKEN"]
         val githubClient = GitHubClient(githubToken)
+        val gitOperations = GitOperations()
         val json = Json { prettyPrint = false }
 
         logger.info("📦 GitHub token available: ${githubToken != null}")
@@ -439,7 +440,429 @@ object GithubMcpServer {
             )
         }
 
-        logger.info("📋 Registered GitHub MCP tools: get-repo-base-info, list-repository-contents, get-file-content, get-repository-tree, list-commits, get-commit-details, get-repository-changes, get-repository-summary, hello-world")
+        // Git operations tools
+        server.addTool(
+            name = "github-create-branch",
+            description = "Create a new branch in a local repository",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("repository_path") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Path to the local repository"))
+                    }
+                    putJsonObject("branch_name") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Name of the new branch"))
+                    }
+                    putJsonObject("base_branch") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Base branch to create from (optional)"))
+                    }
+                },
+                required = listOf("repository_path", "branch_name")
+            )
+        ) { request ->
+            val repoPath = request.arguments["repository_path"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("repository_path is required")),
+                    isError = true
+                )
+
+            val branchName = request.arguments["branch_name"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("branch_name is required")),
+                    isError = true
+                )
+
+            val baseBranch = request.arguments["base_branch"]?.jsonPrimitive?.content
+
+            val result = gitOperations.createBranch(repoPath, branchName, baseBranch)
+
+            if (result.isSuccess) {
+                CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to true,
+                        "branch_name" to branchName,
+                        "message" to result.getOrNull()
+                    )))),
+                )
+            } else {
+                CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to false,
+                        "message" to result.exceptionOrNull()?.message
+                    )))),
+                    isError = true
+                )
+            }
+        }
+
+        server.addTool(
+            name = "github-commit",
+            description = "Create a commit with changes in a local repository",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("repository_path") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Path to the local repository"))
+                    }
+                    putJsonObject("message") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Commit message"))
+                    }
+                    putJsonObject("files") {
+                        put("type", JsonPrimitive("array"))
+                        put("description", JsonPrimitive("List of files to commit (optional, defaults to all changes)"))
+                    }
+                },
+                required = listOf("repository_path", "message")
+            )
+        ) { request ->
+            val repoPath = request.arguments["repository_path"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("repository_path is required")),
+                    isError = true
+                )
+
+            val message = request.arguments["message"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("message is required")),
+                    isError = true
+                )
+
+            val files = request.arguments["files"]?.jsonArray?.map { it.jsonPrimitive.content }
+
+            val result = gitOperations.commit(repoPath, message, files)
+
+            if (result.isSuccess) {
+                CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to true,
+                        "commit_sha" to result.getOrNull(),
+                        "message" to "Commit created successfully"
+                    )))),
+                )
+            } else {
+                CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to false,
+                        "message" to result.exceptionOrNull()?.message
+                    )))),
+                    isError = true
+                )
+            }
+        }
+
+        server.addTool(
+            name = "github-push",
+            description = "Push changes to remote repository",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("repository_path") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Path to the local repository"))
+                    }
+                    putJsonObject("branch_name") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Branch name to push"))
+                    }
+                    putJsonObject("force") {
+                        put("type", JsonPrimitive("boolean"))
+                        put("description", JsonPrimitive("Force push (optional, default: false)"))
+                    }
+                },
+                required = listOf("repository_path", "branch_name")
+            )
+        ) { request ->
+            val repoPath = request.arguments["repository_path"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("repository_path is required")),
+                    isError = true
+                )
+
+            val branchName = request.arguments["branch_name"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("branch_name is required")),
+                    isError = true
+                )
+
+            val force = request.arguments["force"]?.jsonPrimitive?.booleanOrNull ?: false
+
+            val result = gitOperations.push(repoPath, branchName, force)
+
+            if (result.isSuccess) {
+                CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to true,
+                        "pushed" to true,
+                        "rejected" to false,
+                        "message" to result.getOrNull()
+                    )))),
+                )
+            } else {
+                val rejected = result.exceptionOrNull()?.message?.contains("rejected") == true
+                CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to false,
+                        "pushed" to false,
+                        "rejected" to rejected,
+                        "message" to result.exceptionOrNull()?.message
+                    )))),
+                    isError = !rejected  // Don't treat rejection as error, just as info
+                )
+            }
+        }
+
+        server.addTool(
+            name = "github-get-diff",
+            description = "Get diff between two branches or commits in a local repository",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("repository_path") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Path to the local repository"))
+                    }
+                    putJsonObject("base") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Base branch or commit"))
+                    }
+                    putJsonObject("head") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Head branch or commit"))
+                    }
+                },
+                required = listOf("repository_path", "base", "head")
+            )
+        ) { request ->
+            val repoPath = request.arguments["repository_path"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("repository_path is required")),
+                    isError = true
+                )
+
+            val base = request.arguments["base"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("base is required")),
+                    isError = true
+                )
+
+            val head = request.arguments["head"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("head is required")),
+                    isError = true
+                )
+
+            val result = gitOperations.getDiff(repoPath, base, head)
+
+            if (result.isSuccess) {
+                val diffData = result.getOrNull()!!
+                CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to true,
+                        "diff" to diffData["diff"],
+                        "files_changed" to diffData["files_changed"],
+                        "insertions" to diffData["insertions"],
+                        "deletions" to diffData["deletions"],
+                        "message" to "Diff retrieved successfully"
+                    )))),
+                )
+            } else {
+                CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to false,
+                        "message" to result.exceptionOrNull()?.message
+                    )))),
+                    isError = true
+                )
+            }
+        }
+
+        server.addTool(
+            name = "github-get-default-branch",
+            description = "Get the default branch of a GitHub repository",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("owner") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Repository owner"))
+                    }
+                    putJsonObject("repo") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Repository name"))
+                    }
+                },
+                required = listOf("owner", "repo")
+            )
+        ) { request ->
+            val owner = request.arguments["owner"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("owner is required")),
+                    isError = true
+                )
+
+            val repo = request.arguments["repo"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("repo is required")),
+                    isError = true
+                )
+
+            val defaultBranch = githubClient.getDefaultBranch(owner, repo)
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to false,
+                        "message" to "Unable to get default branch for $owner/$repo"
+                    )))),
+                    isError = true
+                )
+
+            CallToolResult(
+                content = listOf(TextContent(json.encodeToString(mapOf(
+                    "success" to true,
+                    "default_branch" to defaultBranch,
+                    "message" to "Default branch retrieved successfully"
+                )))),
+            )
+        }
+
+        server.addTool(
+            name = "github-create-pull-request",
+            description = "Create a pull request on GitHub",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("owner") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Repository owner"))
+                    }
+                    putJsonObject("repo") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Repository name"))
+                    }
+                    putJsonObject("title") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Pull request title"))
+                    }
+                    putJsonObject("body") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Pull request body/description"))
+                    }
+                    putJsonObject("head") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Branch with changes"))
+                    }
+                    putJsonObject("base") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Target branch"))
+                    }
+                },
+                required = listOf("owner", "repo", "title", "body", "head", "base")
+            )
+        ) { request ->
+            val owner = request.arguments["owner"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("owner is required")),
+                    isError = true
+                )
+
+            val repo = request.arguments["repo"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("repo is required")),
+                    isError = true
+                )
+
+            val title = request.arguments["title"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("title is required")),
+                    isError = true
+                )
+
+            val body = request.arguments["body"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("body is required")),
+                    isError = true
+                )
+
+            val head = request.arguments["head"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("head is required")),
+                    isError = true
+                )
+
+            val base = request.arguments["base"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("base is required")),
+                    isError = true
+                )
+
+            val pr = githubClient.createPullRequest(owner, repo, title, body, head, base)
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to false,
+                        "message" to "Unable to create pull request for $owner/$repo"
+                    )))),
+                    isError = true
+                )
+
+            CallToolResult(
+                content = listOf(TextContent(json.encodeToString(mapOf(
+                    "success" to true,
+                    "pr_number" to pr.number,
+                    "pr_url" to pr.html_url,
+                    "message" to "Pull request created successfully"
+                )))),
+            )
+        }
+
+        server.addTool(
+            name = "github-checkout-branch",
+            description = "Switch to an existing branch in a local repository",
+            inputSchema = Tool.Input(
+                properties = buildJsonObject {
+                    putJsonObject("repository_path") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Path to the local repository"))
+                    }
+                    putJsonObject("branch_name") {
+                        put("type", JsonPrimitive("string"))
+                        put("description", JsonPrimitive("Name of the branch to switch to"))
+                    }
+                },
+                required = listOf("repository_path", "branch_name")
+            )
+        ) { request ->
+            val repoPath = request.arguments["repository_path"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("repository_path is required")),
+                    isError = true
+                )
+
+            val branchName = request.arguments["branch_name"]?.jsonPrimitive?.content
+                ?: return@addTool CallToolResult(
+                    content = listOf(TextContent("branch_name is required")),
+                    isError = true
+                )
+
+            val result = gitOperations.checkoutBranch(repoPath, branchName)
+
+            if (result.isSuccess) {
+                CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to true,
+                        "branch_name" to branchName,
+                        "message" to result.getOrNull()
+                    )))),
+                )
+            } else {
+                CallToolResult(
+                    content = listOf(TextContent(json.encodeToString(mapOf(
+                        "success" to false,
+                        "message" to result.exceptionOrNull()?.message
+                    )))),
+                    isError = true
+                )
+            }
+        }
+
+        logger.info("📋 Registered GitHub MCP tools: get-repo-base-info, list-repository-contents, get-file-content, get-repository-tree, list-commits, get-commit-details, get-repository-changes, get-repository-summary, hello-world, github-create-branch, github-commit, github-push, github-get-diff, github-get-default-branch, github-create-pull-request, github-checkout-branch")
         logger.info("🔗 Starting GitHub MCP server on stdin/stdout...")
 
         val transport = StdioServerTransport(

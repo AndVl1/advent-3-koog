@@ -42,3 +42,21 @@ kotlin {
 tasks.test {
     useJUnitPlatform()
 }
+
+// Task to run Code Modification Agent test
+tasks.register<JavaExec>("runCodeModTest") {
+    group = "verification"
+    description = "Run Code Modification Agent test"
+
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("ru.andvl.chatter.koog.agents.codemod.CodeModificationAgentTestKt")
+
+    // Pass environment variables
+    environment("OPENROUTER_API_KEY", System.getenv("OPENROUTER_API_KEY") ?: "")
+    environment("GITHUB_TOKEN", System.getenv("GITHUB_TOKEN") ?: "")
+
+    // Enable detailed logging
+    systemProperty("logback.configurationFile", "src/test/resources/logback-test.xml")
+
+    dependsOn("testClasses")
+}

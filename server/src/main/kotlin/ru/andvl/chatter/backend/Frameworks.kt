@@ -276,6 +276,51 @@ fun Application.configureFrameworks() {
                 }
             }
 
+            // Code Modification Agent endpoint
+            post("/modify-code") {
+                try {
+                    val request = call.receive<ru.andvl.chatter.koog.model.codemod.CodeModificationRequest>()
+                    log.info("Received code modification request for repository: ${request.githubRepo}")
+
+                    val koogService = KoogServiceFactory.createFromEnv()
+
+                    // Get PromptExecutor from Koog plugin
+                    val promptExecutor = requireNotNull(call.application.pluginOrNull(Koog)) {
+                        "Plugin Koog is not configured"
+                    }.promptExecutor
+
+                    // Use OPENROUTER as default provider (no provider field in request)
+                    val provider = Provider.OPENROUTER
+
+                    val response = koogService.modifyCode(request, promptExecutor, provider)
+
+                    log.info("Code modification completed: ${if (response.success) "SUCCESS" else "FAILED"}")
+                    log.info("  PR URL: ${response.prUrl}")
+                    log.info("  Files modified: ${response.filesModified.size}")
+                    log.info("  Iterations used: ${response.iterationsUsed}")
+
+                    call.respond(HttpStatusCode.OK, response)
+                } catch (e: Exception) {
+                    log.error("Error processing code modification request", e)
+                    call.respond(
+                        HttpStatusCode.InternalServerError,
+                        ru.andvl.chatter.koog.model.codemod.CodeModificationResponse(
+                            success = false,
+                            prUrl = null,
+                            prNumber = null,
+                            diff = null,
+                            commitSha = null,
+                            branchName = "",
+                            filesModified = emptyList(),
+                            verificationStatus = ru.andvl.chatter.koog.model.codemod.VerificationStatus.FAILED_SETUP,
+                            iterationsUsed = 0,
+                            errorMessage = "Error processing request: ${e.message}",
+                            message = "Code modification failed with exception"
+                        )
+                    )
+                }
+            }
+
             // Health check endpoint for AI services
             get("/health") {
                 try {

@@ -341,6 +341,92 @@ internal class DockerToolSet : ToolSet {
         }
     }
 
+    @Tool("run-docker-container")
+    @LLMDescription("Run a command inside a Docker container and return the results")
+    fun runDockerContainer(
+        @LLMDescription("Docker image name to run")
+        imageName: String,
+        @LLMDescription("Command to execute inside the container (e.g., './gradlew test', 'npm test')")
+        command: String,
+        @LLMDescription("Timeout in seconds (default 300)")
+        timeoutSeconds: Int = 300
+    ): RunResult {
+        return try {
+            logger.info("Running Docker container with image: $imageName, command: $command")
+            val startTime = System.currentTimeMillis()
+
+            // Run container with --rm to automatically remove it after execution
+            val process = ProcessBuilder(
+                "docker", "run",
+                "--rm",  // Automatically remove container when it exits
+                imageName,
+                "sh", "-c", command
+            )
+                .redirectErrorStream(true)
+                .start()
+
+            val runLogs = mutableListOf<String>()
+            val reader = process.inputStream.bufferedReader()
+
+            // Read output with timeout
+            val timeoutMillis = timeoutSeconds * 1000L
+            var line: String?
+            while (System.currentTimeMillis() - startTime < timeoutMillis) {
+                if (reader.ready()) {
+                    line = reader.readLine()
+                    if (line == null) break
+                    runLogs.add(line)
+                    if (runLogs.size % 50 == 0) {
+                        logger.info("Docker run progress: ${runLogs.size} lines")
+                    }
+                } else if (!process.isAlive) {
+                    // Process finished, read remaining output
+                    while (reader.readLine().also { line = it } != null) {
+                        line?.let { runLogs.add(it) }
+                    }
+                    break
+                } else {
+                    Thread.sleep(100)
+                }
+            }
+
+            val duration = ((System.currentTimeMillis() - startTime) / 1000).toInt()
+
+            // Check if timeout occurred
+            if (process.isAlive) {
+                logger.warn("Docker container timed out after ${timeoutSeconds}s")
+                process.destroyForcibly()
+                return RunResult(
+                    success = false,
+                    exitCode = -1,
+                    logs = runLogs.takeLast(50),
+                    message = "Container execution timed out after ${timeoutSeconds}s",
+                    durationSeconds = duration
+                )
+            }
+
+            val exitCode = process.waitFor()
+            logger.info("Docker container completed with exit code: $exitCode, duration: ${duration}s")
+
+            RunResult(
+                success = exitCode == 0,
+                exitCode = exitCode,
+                logs = runLogs.takeLast(100),
+                message = if (exitCode == 0) "Command executed successfully" else "Command failed with exit code $exitCode",
+                durationSeconds = duration
+            )
+        } catch (e: Exception) {
+            logger.error("Docker run error", e)
+            RunResult(
+                success = false,
+                exitCode = -1,
+                logs = listOf(e.stackTraceToString().lines().take(10)).flatten(),
+                message = "Exception during container execution: ${e.message}",
+                durationSeconds = 0
+            )
+        }
+    }
+
     @Tool("cleanup-directory")
     @LLMDescription("Remove a temporary directory created during Docker operations")
     fun cleanupDirectory(
@@ -447,4 +533,18 @@ data class CleanupResult(
     val success: Boolean,
     @SerialName("message")
     val message: String
+)
+
+@Serializable
+data class RunResult(
+    @SerialName("success")
+    val success: Boolean,
+    @SerialName("exit_code")
+    val exitCode: Int,
+    @SerialName("logs")
+    val logs: List<String>,
+    @SerialName("message")
+    val message: String,
+    @SerialName("duration_seconds")
+    val durationSeconds: Int
 )
