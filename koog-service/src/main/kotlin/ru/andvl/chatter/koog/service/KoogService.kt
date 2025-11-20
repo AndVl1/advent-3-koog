@@ -3,6 +3,7 @@ package ru.andvl.chatter.koog.service
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.agents.features.eventHandler.feature.handleEvents
 import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.agents.features.tracing.feature.Tracing
@@ -34,6 +35,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import ru.andvl.chatter.koog.agents.codemod.getCodeModificationStrategy
 import ru.andvl.chatter.koog.agents.conversation.getConversationAgentStrategy
 import ru.andvl.chatter.koog.agents.mcp.GithubAnalysisNodes
 import ru.andvl.chatter.koog.agents.mcp.getGithubAnalysisStrategy
@@ -44,6 +46,8 @@ import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
 import ru.andvl.chatter.koog.agents.utils.createFixingModel
 import ru.andvl.chatter.koog.embeddings.model.EmbeddingConfig
 import ru.andvl.chatter.koog.mcp.McpProvider
+import ru.andvl.chatter.koog.model.codemod.CodeModificationRequest
+import ru.andvl.chatter.koog.model.codemod.CodeModificationResponse
 import ru.andvl.chatter.koog.model.common.TokenUsage
 import ru.andvl.chatter.koog.model.conversation.ConversationRequest
 import ru.andvl.chatter.koog.model.conversation.ConversationResponse
@@ -51,6 +55,10 @@ import ru.andvl.chatter.koog.model.structured.ChatRequest
 import ru.andvl.chatter.koog.model.structured.ChatResponse
 import ru.andvl.chatter.koog.model.structured.StructuredResponse
 import ru.andvl.chatter.koog.model.tool.GithubChatRequest
+import ru.andvl.chatter.koog.tools.CurrentTimeToolSet
+import ru.andvl.chatter.koog.tools.DockerToolSet
+import ru.andvl.chatter.koog.tools.FileOperationsToolSet
+import ru.andvl.chatter.koog.tools.RagToolSet
 import ru.andvl.chatter.shared.models.ChatHistory
 import ru.andvl.chatter.shared.models.github.*
 import java.io.File
@@ -314,6 +322,139 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
             } catch (e: Exception) {
                 logger.error(e) { "Conversation failed" }
                 throw Exception("Conversation failed: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * Code modification method for automated code changes
+     *
+     * This method:
+     * - Clones/reuses GitHub repository
+     * - Analyzes codebase and creates modification plan
+     * - Applies code changes
+     * - Runs Docker verification (LLM chooses command)
+     * - Retries on failure (max 5 iterations)
+     * - Commits and pushes changes or saves diff
+     * - Creates PR if successful
+     *
+     * @param request Code modification request with repository URL and user's request
+     * @param promptExecutor Prompt executor for LLM calls
+     * @param provider LLM provider to use
+     * @return CodeModificationResponse with PR URL or diff
+     */
+    suspend fun modifyCode(
+        request: CodeModificationRequest,
+        promptExecutor: PromptExecutor,
+        provider: Provider? = null,
+    ): CodeModificationResponse {
+        val model: LLModel = when (provider) {
+            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
+            Provider.OPENROUTER -> LLModel(
+                provider = LLMProvider.OpenRouter,
+                id = "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
+                capabilities = listOf(
+                    LLMCapability.Temperature,
+                    LLMCapability.Completion,
+                    LLMCapability.Tools,
+                    LLMCapability.OpenAIEndpoint.Completions,
+                    LLMCapability.MultipleChoices,
+                ),
+                contextLength = 200_000, //
+            )
+            else -> OpenRouterModels.Gemini2_5Flash
+        }
+
+        val fixingModel = when (provider) {
+            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
+            Provider.OPENROUTER -> LLModel(
+                provider = LLMProvider.OpenRouter,
+                id = "z-ai/glm-4.5-air", // "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
+                capabilities = listOf(
+                    LLMCapability.Temperature,
+                    LLMCapability.Completion,
+                ),
+                contextLength = 16_000, //
+            )
+            else -> OpenRouterModels.GPT5Nano
+        }
+
+        return withContext(Dispatchers.IO) {
+            val emptyPrompt = prompt(
+                Prompt(emptyList(), "code-modification", params = LLMParams())
+            ) {}
+
+            try {
+                val strategy = getCodeModificationStrategy(
+                    model = model,
+                    fixingModel = fixingModel
+                )
+
+                val agentConfig = AIAgentConfig(
+                    prompt = emptyPrompt,
+                    model = model,
+                    maxAgentIterations = 150,
+                )
+                val githubTools = McpProvider.getGithubToolsRegistry()
+
+                val agent = AIAgent(
+                    promptExecutor = promptExecutor,
+                    toolRegistry = ToolRegistry {
+                        // File operations tools (used in all subgraphs)
+                        tools(FileOperationsToolSet())
+
+                        // Docker tools (used in docker-verification subgraph)
+                        tools(DockerToolSet())
+
+                        // Utility tools
+                        tools(CurrentTimeToolSet())
+
+                        tools(githubTools.tools)
+
+                        // RAG tools (used in code-analysis subgraph, if embeddings enabled)
+                        if (request.enableEmbeddings) {
+                            tools(RagToolSet())
+                        }
+                    },
+                    strategy = strategy,
+                    agentConfig = agentConfig,
+                    id = "code-modification-agent",
+                    installFeatures = {
+                        install(Tracing) {
+                            val outputPath = Path("./logs/koog_code_modification_trace.log")
+                            addMessageProcessor(TraceFeatureMessageLogWriter(logger))
+                            addMessageProcessor(TraceFeatureMessageFileWriter(
+                                outputPath,
+                                { path: Path -> SystemFileSystem.sink(path).buffered() }
+                            ))
+                        }
+                    }
+                )
+
+                val result = agent.run(request)
+                val response = result
+
+                logger.info { "Code modification completed: ${if (response.success) "SUCCESS" else "FAILED"}" }
+                logger.info { "  PR URL: ${response.prUrl}" }
+                logger.info { "  Files modified: ${response.filesModified.size}" }
+                logger.info { "  Iterations used: ${response.iterationsUsed}" }
+
+                response
+            } catch (e: Exception) {
+                logger.error(e) { "Code modification failed" }
+                CodeModificationResponse(
+                    success = false,
+                    prUrl = null,
+                    prNumber = null,
+                    diff = null,
+                    commitSha = null,
+                    branchName = "",
+                    filesModified = emptyList(),
+                    verificationStatus = ru.andvl.chatter.koog.model.codemod.VerificationStatus.FAILED_SETUP,
+                    iterationsUsed = 0,
+                    errorMessage = "Code modification failed: ${e.message}",
+                    message = "Code modification failed with exception"
+                )
             }
         }
     }

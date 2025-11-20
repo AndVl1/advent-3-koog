@@ -504,6 +504,69 @@ class GitHubClient(private val token: String? = null) {
         }
     }
 
+    /**
+     * Get default branch of a repository
+     */
+    suspend fun getDefaultBranch(owner: String, repo: String): String? {
+        return try {
+            val response = httpClient.get("https://api.github.com/repos/$owner/$repo") {
+                token?.let {
+                    header("Authorization", "Bearer $it")
+                }
+            }
+
+            if (response.status.value in 200..299) {
+                val repoData: GitHubRepositoryResponse = response.body()
+                repoData.default_branch
+            } else {
+                logger.error("Failed to get default branch: ${response.status}")
+                null
+            }
+        } catch (e: Exception) {
+            logger.error("Error getting default branch", e)
+            null
+        }
+    }
+
+    /**
+     * Create a pull request
+     */
+    suspend fun createPullRequest(
+        owner: String,
+        repo: String,
+        title: String,
+        body: String,
+        head: String,
+        base: String
+    ): GitHubPullRequestResponse? {
+        return try {
+            val response = httpClient.post("https://api.github.com/repos/$owner/$repo/pulls") {
+                token?.let {
+                    header("Authorization", "Bearer $it")
+                }
+                contentType(ContentType.Application.Json)
+                setBody(
+                    mapOf(
+                        "title" to title,
+                        "body" to body,
+                        "head" to head,
+                        "base" to base
+                    )
+                )
+            }
+
+            if (response.status.value in 200..299) {
+                response.body<GitHubPullRequestResponse>()
+            } else {
+                logger.error("Failed to create pull request: ${response.status}")
+                null
+            }
+        } catch (e: Exception) {
+            logger.error("Error creating pull request", e)
+            null
+        }
+    }
+
     fun close() {
         httpClient.close()
     }
@@ -618,4 +681,18 @@ private data class GitHubCommitFileResponse(
     val changes: Int,
     val patch: String? = null,
     val previous_filename: String? = null
+)
+
+@Serializable
+private data class GitHubRepositoryResponse(
+    val name: String,
+    val default_branch: String
+)
+
+@Serializable
+data class GitHubPullRequestResponse(
+    val number: Int,
+    val html_url: String,
+    val state: String,
+    val title: String
 )
