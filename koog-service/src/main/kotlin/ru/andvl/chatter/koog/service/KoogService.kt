@@ -484,6 +484,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 "OPEN_ROUTER", "OPENROUTER" -> LLMProvider.OpenRouter
                 "OPENAI" -> LLMProvider.OpenAI
                 "ANTHROPIC" -> LLMProvider.Anthropic
+                "OLLAMA" -> LLMProvider.Ollama
                 "CUSTOM" -> object : LLMProvider(llmConfig.baseUrl.toString(), llmConfig.provider) {}  // Use OpenRouter-compatible for custom providers
                 else -> LLMProvider.OpenRouter
             }

@@ -42,7 +42,16 @@ data class AppState(
     val recentEvents: List<AnalysisEvent> = emptyList(),
 
     // Chat state
-    val chatState: ChatState = ChatState()
+    val chatState: ChatState = ChatState(),
+
+    // Dynamic providers (Ollama)
+    val availableProviders: List<LLMProvider> = listOf(
+        LLMProvider.OPEN_ROUTER,
+        LLMProvider.GOOGLE,
+        LLMProvider.CUSTOM
+    ),
+    val ollamaModels: List<String> = emptyList(),
+    val isOllamaAvailable: Boolean = false
 )
 
 /**
@@ -91,6 +100,13 @@ enum class LLMProvider(
             "gemini-2.5-flash" to 1_000_000L
         ),
         defaultMaxContextTokens = 1_000_000L
+    ),
+    OLLAMA(
+        "Ollama (Local)",
+        "",
+        emptyList(), // Models will be loaded dynamically
+        requiresCustomUrl = false,
+        defaultMaxContextTokens = 16_000L
     ),
     CUSTOM(
         "Custom",

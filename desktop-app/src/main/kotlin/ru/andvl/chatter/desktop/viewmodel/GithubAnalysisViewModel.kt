@@ -11,6 +11,7 @@ import ru.andvl.chatter.core.model.conversation.PersonalizationConfig
 import ru.andvl.chatter.desktop.audio.AudioRecorder
 import ru.andvl.chatter.desktop.interactor.GithubAnalysisInteractor
 import ru.andvl.chatter.desktop.models.*
+import ru.andvl.chatter.desktop.services.OllamaService
 import ru.andvl.chatter.koog.mapping.toKoogMessage
 import ru.andvl.chatter.koog.model.conversation.ConversationRequest
 import ru.andvl.chatter.shared.models.github.AnalysisEvent
@@ -48,6 +49,43 @@ class GithubAnalysisViewModel(
     // Audio player for voice playback
     private val audioPlayer = ru.andvl.chatter.desktop.audio.AudioPlayer()
     private var playbackPositionJob: Job? = null
+
+    init {
+        // Initialize Ollama on startup (async)
+        viewModelScope.launch {
+            initializeOllama()
+        }
+    }
+
+    /**
+     * Initialize Ollama: check availability and load models
+     */
+    private suspend fun initializeOllama() {
+        try {
+            val ollamaModels = OllamaService.getAvailableModels()
+
+            if (ollamaModels.isNotEmpty()) {
+                // Ollama is available - add to providers and update state
+                _state.update { currentState ->
+                    val updatedProviders = buildList {
+                        add(LLMProvider.OPEN_ROUTER)
+                        add(LLMProvider.GOOGLE)
+                        add(LLMProvider.OLLAMA)
+                        add(LLMProvider.CUSTOM)
+                    }
+
+                    currentState.copy(
+                        availableProviders = updatedProviders,
+                        ollamaModels = ollamaModels,
+                        isOllamaAvailable = true
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // Silently fail - Ollama is optional
+            println("Ollama initialization failed: ${e.message}")
+        }
+    }
 
     /**
      * Load API key from .env file if it exists
