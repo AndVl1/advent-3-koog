@@ -1,3 +1,3 @@
-[submodule "thirdpatry/koog"]
-	path = thirdpatry/koog
+[submodule "thirdparty/koog"]
+	path = thirdparty/koog
 	url = https://github.com/JetBrains/koog
