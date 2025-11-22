@@ -16,6 +16,7 @@ fun createFixingModel(
         "OPEN_ROUTER", "OPENROUTER" -> LLMProvider.OpenRouter
         "OPENAI" -> LLMProvider.OpenAI
         "ANTHROPIC" -> LLMProvider.Anthropic
+        "OLLAMA" -> LLMProvider.Ollama
         "CUSTOM" -> LLMProvider.OpenRouter  // Use OpenRouter-compatible for custom providers
         else -> LLMProvider.OpenRouter
     }

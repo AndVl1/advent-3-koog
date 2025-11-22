@@ -11,6 +11,7 @@ import ai.koog.prompt.executor.clients.retry.RetryablePattern
 import ai.koog.prompt.executor.clients.retry.RetryingLLMClient
 import ai.koog.prompt.executor.llms.SingleLLMPromptExecutor
 import ai.koog.prompt.executor.model.PromptExecutor
+import ai.koog.prompt.executor.ollama.client.OllamaClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
@@ -115,6 +116,10 @@ class GithubAnalysisRepository {
             }
             LLMProvider.GOOGLE -> {
                 GoogleLLMClient(config.apiKey)
+            }
+            LLMProvider.OLLAMA -> {
+                // Local Ollama instance at http://localhost:11434
+                OllamaClient(baseUrl = "http://localhost:11434")
             }
             LLMProvider.CUSTOM -> {
                 // For custom provider, use OpenAI-compatible executor with custom baseUrl

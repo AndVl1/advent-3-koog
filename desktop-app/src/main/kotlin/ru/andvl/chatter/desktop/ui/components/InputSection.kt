@@ -31,7 +31,7 @@ internal fun InputSection(
             TaskDescriptionField(state.userInput, onAction)
 
             // LLM Provider Selection
-            LLMProviderDropdown(state.llmProvider, onAction)
+            LLMProviderDropdown(state.llmProvider, state.availableProviders, onAction)
 
             // Model Selection
             ModelSelectionSection(state, onAction)
@@ -41,8 +41,10 @@ internal fun InputSection(
                 CustomProviderFields(state, onAction)
             }
 
-            // API Key Input
-            APIKeyField(state, onAction)
+            // API Key Input (hidden for Ollama, but value is preserved)
+            if (state.llmProvider != LLMProvider.OLLAMA) {
+                APIKeyField(state, onAction)
+            }
 
             // Google Sheets Integration
             GoogleSheetsSection(state, onAction)
@@ -73,6 +75,7 @@ private fun TaskDescriptionField(
 @Composable
 private fun LLMProviderDropdown(
     llmProvider: LLMProvider,
+    availableProviders: List<LLMProvider>,
     onAction: (GithubAnalysisAction) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -95,7 +98,7 @@ private fun LLMProviderDropdown(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            LLMProvider.entries.forEach { provider ->
+            availableProviders.forEach { provider ->
                 DropdownMenuItem(
                     text = { Text(provider.displayName) },
                     onClick = {
@@ -146,7 +149,14 @@ private fun ModelSelectionSection(
                 expanded = modelExpanded,
                 onDismissRequest = { modelExpanded = false }
             ) {
-                state.llmProvider.availableModels.forEach { model ->
+                // For Ollama, use dynamically loaded models
+                val models = if (state.llmProvider == LLMProvider.OLLAMA) {
+                    state.ollamaModels
+                } else {
+                    state.llmProvider.availableModels
+                }
+
+                models.forEach { model ->
                     DropdownMenuItem(
                         text = { Text(model) },
                         onClick = {
@@ -416,7 +426,14 @@ private fun FixingModelSelection(
                 expanded = fixingModelExpanded,
                 onDismissRequest = { fixingModelExpanded = false }
             ) {
-                state.llmProvider.availableModels.forEach { model ->
+                // For Ollama, use dynamically loaded models
+                val models = if (state.llmProvider == LLMProvider.OLLAMA) {
+                    state.ollamaModels
+                } else {
+                    state.llmProvider.availableModels
+                }
+
+                models.forEach { model ->
                     DropdownMenuItem(
                         text = { Text(model) },
                         onClick = {
