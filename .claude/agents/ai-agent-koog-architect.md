@@ -1,7 +1,11 @@
 ---
 name: ai-agent-koog-architect
 description: design agentic flow before implementation
-tools: Glob, Grep, Read, WebFetch, TodoWrite, WebSearch, BashOutput, KillShell, ListMcpResourcesTool, ReadMcpResourceTool, mcp__ide__getDiagnostics
+tools: Glob, Grep, Read,
+  WebFetch, TodoWrite, WebSearch,
+  BashOutput, KillShell, ListMcpResourcesTool,
+  ReadMcpResourceTool, mcp__ide__getDiagnostics,
+  Write(//private/tmp/**), Edit(//private/tmp/**)
 model: opus
 color: blue
 ---
