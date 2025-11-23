@@ -27,7 +27,7 @@ data class CodeModificationRequest(
  * Output result of code modification
  *
  * Contains the proposed changes, validation status,
- * and metadata about the modification.
+ * Docker validation results, and metadata about the modification.
  */
 @Serializable
 data class CodeModificationResult(
@@ -46,7 +46,9 @@ data class CodeModificationResult(
     @SerialName("total_changes")
     val totalChanges: Int = 0,
     @SerialName("complexity")
-    val complexity: Complexity = Complexity.SIMPLE
+    val complexity: Complexity = Complexity.SIMPLE,
+    @SerialName("docker_validation_result")
+    val dockerValidationResult: DockerValidationResult? = null
 )
 
 /**
@@ -216,3 +218,67 @@ internal data class ValidationCheckResult(
     @SerialName("errors")
     val errors: List<String> = emptyList()
 )
+
+/**
+ * Docker validation result
+ */
+@Serializable
+data class DockerValidationResult(
+    @SerialName("validated")
+    val validated: Boolean,
+    @SerialName("docker_available")
+    val dockerAvailable: Boolean,
+    @SerialName("build_passed")
+    val buildPassed: Boolean? = null,
+    @SerialName("tests_passed")
+    val testsPassed: Boolean? = null,
+    @SerialName("build_logs")
+    val buildLogs: List<String> = emptyList(),
+    @SerialName("test_logs")
+    val testLogs: List<String> = emptyList(),
+    @SerialName("error_message")
+    val errorMessage: String? = null,
+    @SerialName("duration_seconds")
+    val durationSeconds: Int = 0
+)
+
+/**
+ * Project type detection for Docker validation
+ */
+internal enum class ProjectType(
+    val baseImage: String,
+    val buildCommand: String,
+    val testCommand: String?,
+    val detectionFiles: List<String>
+) {
+    KOTLIN_GRADLE(
+        baseImage = "gradle:8-jdk17",
+        buildCommand = "./gradlew build -x test",
+        testCommand = "./gradlew test",
+        detectionFiles = listOf("build.gradle.kts", "build.gradle", "gradlew")
+    ),
+    JAVA_MAVEN(
+        baseImage = "maven:3-openjdk-17",
+        buildCommand = "mvn compile",
+        testCommand = "mvn test",
+        detectionFiles = listOf("pom.xml", "mvnw")
+    ),
+    NODE_NPM(
+        baseImage = "node:18-alpine",
+        buildCommand = "npm install && npm run build",
+        testCommand = "npm test",
+        detectionFiles = listOf("package.json", "package-lock.json")
+    ),
+    PYTHON_PIP(
+        baseImage = "python:3.9-slim",
+        buildCommand = "pip install -r requirements.txt",
+        testCommand = "pytest",
+        detectionFiles = listOf("requirements.txt", "setup.py")
+    ),
+    UNKNOWN(
+        baseImage = "ubuntu:latest",
+        buildCommand = "echo 'Unknown project type, skipping build'",
+        testCommand = null,
+        detectionFiles = emptyList()
+    )
+}

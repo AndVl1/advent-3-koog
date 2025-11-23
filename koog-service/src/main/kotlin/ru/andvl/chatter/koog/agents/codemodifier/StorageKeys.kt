@@ -38,3 +38,11 @@ internal val validationRetryCountKey = createStorageKey<Int>("validation-retry-c
 
 // Response building keys
 internal val finalResultKey = createStorageKey<CodeModificationResult>("final-result")
+
+// Docker validation keys
+internal val dockerValidationEnabledKey = createStorageKey<Boolean>("docker-validation-enabled")
+internal val dockerAvailableKey = createStorageKey<Boolean>("docker-available")
+internal val dockerValidationResultKey = createStorageKey<DockerValidationResult>("docker-validation-result")
+internal val validationImageNameKey = createStorageKey<String>("validation-image-name")
+internal val validationDirectoryKey = createStorageKey<String>("validation-directory")
+internal val detectedProjectTypeKey = createStorageKey<ProjectType>("detected-project-type")

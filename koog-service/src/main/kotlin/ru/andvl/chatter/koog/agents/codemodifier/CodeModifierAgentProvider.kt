@@ -20,6 +20,7 @@ private val logger = LoggerFactory.getLogger("code-modifier-agent")
  * - Analyzes code context using RAG and file operations
  * - Generates structured modification plan
  * - Validates syntax and detects breaking changes
+ * - Optionally validates with Docker (build + tests)
  * - Returns detailed modification proposals (does NOT apply changes)
  *
  * Flow:
@@ -27,13 +28,15 @@ private val logger = LoggerFactory.getLogger("code-modifier-agent")
  * 2. Code Analysis - search relevant files, analyze context, detect patterns
  * 3. Modification Planning - generate modification plan with structured LLM output
  * 4. Validation - validate syntax and detect breaking changes (with retry logic)
- * 5. Response Building - assemble final result
+ * 5. Docker Validation - optional Docker-based validation (build + tests)
+ * 6. Response Building - assemble final result
  *
  * Safety features:
  * - File scope validation (max 20 files)
  * - Change limit (max 50 changes)
  * - Syntax validation with retry (max 2 retries)
  * - Breaking change detection
+ * - Optional Docker validation (skipped if Docker not available)
  * - No automatic application of changes
  *
  * @param model LLM model to use for code analysis and planning
@@ -48,6 +51,7 @@ suspend fun getCodeModifierStrategy(model: LLModel): AIAgentGraphStrategy<CodeMo
         val subgraphCodeAnalysis by subgraphCodeAnalysis(model)
         val subgraphModificationPlanning by subgraphModificationPlanning(model)
         val subgraphValidation by subgraphValidation(model)
+        val subgraphDockerValidation by subgraphDockerValidation()
         val subgraphResponseBuilding by subgraphResponseBuilding()
 
         // Linear flow through all subgraphs
@@ -56,6 +60,7 @@ suspend fun getCodeModifierStrategy(model: LLModel): AIAgentGraphStrategy<CodeMo
                 subgraphCodeAnalysis then
                 subgraphModificationPlanning then
                 subgraphValidation then
+                subgraphDockerValidation then
                 subgraphResponseBuilding then
                 nodeFinish
 

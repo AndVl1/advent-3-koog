@@ -218,6 +218,9 @@ data class CodeModificationResponse(
     @SerialName("complexity")
     val complexity: String = "SIMPLE",
 
+    @SerialName("docker_validation")
+    val dockerValidation: DockerValidationInfo? = null,
+
     @SerialName("model")
     val model: String = "",
 
@@ -277,6 +280,33 @@ data class ProposedChange(
 
     @SerialName("validation_notes")
     val validationNotes: String? = null
+)
+
+/**
+ * Docker validation information
+ */
+@Serializable
+data class DockerValidationInfo(
+    @SerialName("validated")
+    val validated: Boolean,
+
+    @SerialName("docker_available")
+    val dockerAvailable: Boolean,
+
+    @SerialName("build_passed")
+    val buildPassed: Boolean? = null,
+
+    @SerialName("tests_passed")
+    val testsPassed: Boolean? = null,
+
+    @SerialName("build_logs")
+    val buildLogs: List<String> = emptyList(),
+
+    @SerialName("test_logs")
+    val testLogs: List<String> = emptyList(),
+
+    @SerialName("error_message")
+    val errorMessage: String? = null
 )
 
 /**

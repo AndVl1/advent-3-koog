@@ -14,13 +14,13 @@ private val logger = LoggerFactory.getLogger("codemodifier-response-building")
  * Subgraph: Response Building
  *
  * Flow:
- * 1. Build response - Assemble final CodeModificationResult
+ * 1. Build response - Assemble final CodeModificationResult with Docker validation info
  *
- * Input: ValidationCheckResult
+ * Input: DockerValidationResult
  * Output: CodeModificationResult
  */
 internal suspend fun AIAgentGraphStrategyBuilder<*, *>.subgraphResponseBuilding():
-        AIAgentSubgraphDelegate<ValidationCheckResult, CodeModificationResult> =
+        AIAgentSubgraphDelegate<DockerValidationResult, CodeModificationResult> =
     subgraph(name = "response-building") {
         val nodeBuildResponse by nodeBuildResponse()
 
@@ -31,16 +31,15 @@ internal suspend fun AIAgentGraphStrategyBuilder<*, *>.subgraphResponseBuilding(
 /**
  * Node: Build response
  *
- * Assembles the final result with all metadata.
+ * Assembles the final result with all metadata including Docker validation.
  */
-private fun AIAgentSubgraphBuilderBase<ValidationCheckResult, CodeModificationResult>.nodeBuildResponse() =
-    node<ValidationCheckResult, CodeModificationResult>("build-response") { validationResult ->
-        logger.info("Building final response")
+private fun AIAgentSubgraphBuilderBase<DockerValidationResult, CodeModificationResult>.nodeBuildResponse() =
+    node<DockerValidationResult, CodeModificationResult>("build-response") { dockerValidationResult ->
+        logger.info("Building final response with Docker validation info")
 
         try {
             val plan = storage.get(modificationPlanKey)
-            val syntaxValid = validationResult.syntaxValid
-            val breakingChanges = validationResult.breakingChanges
+            val validationCheckResult = storage.get(validationCheckResultKey)
 
             if (plan == null) {
                 logger.error("No modification plan found in storage")
@@ -50,28 +49,46 @@ private fun AIAgentSubgraphBuilderBase<ValidationCheckResult, CodeModificationRe
                 )
             }
 
+            if (validationCheckResult == null) {
+                logger.error("No validation check result found in storage")
+                return@node CodeModificationResult(
+                    success = false,
+                    errorMessage = "Failed to validate modifications"
+                )
+            }
+
+            val syntaxValid = validationCheckResult.syntaxValid
+            val breakingChanges = validationCheckResult.breakingChanges
+
             // Calculate total files affected
             val totalFilesAffected = plan.changes.map { it.filePath }.distinct().size
 
-            // Calculate complexity
+            // Calculate complexity (consider Docker validation results)
             val complexity = calculateComplexity(
                 changeCount = plan.changes.size,
                 filesAffected = totalFilesAffected,
                 hasBreakingChanges = breakingChanges.isNotEmpty(),
-                estimatedComplexity = plan.estimatedComplexity
+                estimatedComplexity = plan.estimatedComplexity,
+                dockerValidationFailed = dockerValidationResult.validated &&
+                    (dockerValidationResult.buildPassed == false || dockerValidationResult.testsPassed == false)
             )
 
             val result = CodeModificationResult(
-                success = syntaxValid,
+                success = syntaxValid &&
+                    (!dockerValidationResult.validated ||
+                     (dockerValidationResult.buildPassed != false && dockerValidationResult.testsPassed != false)),
                 modificationPlan = plan,
                 validationPassed = syntaxValid,
                 breakingChangesDetected = breakingChanges.isNotEmpty(),
                 totalFilesAffected = totalFilesAffected,
                 totalChanges = plan.changes.size,
                 complexity = complexity,
-                errorMessage = if (!syntaxValid) {
-                    "Syntax validation failed: ${validationResult.errors.joinToString(", ")}"
-                } else null
+                dockerValidationResult = dockerValidationResult,
+                errorMessage = buildErrorMessage(
+                    syntaxValid = syntaxValid,
+                    validationErrors = validationCheckResult.errors,
+                    dockerValidationResult = dockerValidationResult
+                )
             )
 
             storage.set(finalResultKey, result)
@@ -80,7 +97,10 @@ private fun AIAgentSubgraphBuilderBase<ValidationCheckResult, CodeModificationRe
                 "Response built: success=${result.success}, " +
                         "files=${result.totalFilesAffected}, " +
                         "changes=${result.totalChanges}, " +
-                        "breaking=${result.breakingChangesDetected}"
+                        "breaking=${result.breakingChangesDetected}, " +
+                        "docker_validated=${dockerValidationResult.validated}, " +
+                        "docker_build=${dockerValidationResult.buildPassed}, " +
+                        "docker_tests=${dockerValidationResult.testsPassed}"
             )
 
             result
@@ -94,13 +114,40 @@ private fun AIAgentSubgraphBuilderBase<ValidationCheckResult, CodeModificationRe
     }
 
 /**
+ * Build comprehensive error message
+ */
+private fun buildErrorMessage(
+    syntaxValid: Boolean,
+    validationErrors: List<String>,
+    dockerValidationResult: DockerValidationResult
+): String? {
+    val errors = mutableListOf<String>()
+
+    if (!syntaxValid) {
+        errors.add("Syntax validation failed: ${validationErrors.joinToString(", ")}")
+    }
+
+    if (dockerValidationResult.validated) {
+        if (dockerValidationResult.buildPassed == false) {
+            errors.add("Docker build failed: ${dockerValidationResult.errorMessage ?: "Unknown error"}")
+        }
+        if (dockerValidationResult.testsPassed == false) {
+            errors.add("Docker tests failed: ${dockerValidationResult.errorMessage ?: "Unknown error"}")
+        }
+    }
+
+    return if (errors.isNotEmpty()) errors.joinToString("; ") else null
+}
+
+/**
  * Calculate overall complexity based on multiple factors
  */
 private fun calculateComplexity(
     changeCount: Int,
     filesAffected: Int,
     hasBreakingChanges: Boolean,
-    estimatedComplexity: Complexity
+    estimatedComplexity: Complexity,
+    dockerValidationFailed: Boolean = false
 ): Complexity {
     // Start with LLM's estimate
     var complexityScore = when (estimatedComplexity) {
@@ -120,6 +167,9 @@ private fun calculateComplexity(
 
     // Breaking changes always increase complexity
     if (hasBreakingChanges) complexityScore += 1
+
+    // Docker validation failure increases complexity
+    if (dockerValidationFailed) complexityScore += 1
 
     // Map score back to complexity
     return when (complexityScore) {
