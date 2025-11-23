@@ -45,6 +45,7 @@ config.properties
 /tools/docs/
 /data/
 /logs/
+**/logs/**/*.log
 
 ### Temporary analysis files ###
 github-analysis-*.md

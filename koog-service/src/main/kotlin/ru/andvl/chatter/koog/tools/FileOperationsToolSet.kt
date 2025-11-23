@@ -15,11 +15,13 @@ import kotlin.io.path.isDirectory
 internal class FileOperationsToolSet : ToolSet {
     private val logger = LoggerFactory.getLogger(FileOperationsToolSet::class.java)
     private val workDir = File("/tmp/code-modifications")
+    private val repositoryDir = File("/tmp/repository-analyzer")
     private val maxFileSize = 10 * 1024 * 1024 // 10 MB
     private val maxFilesForSearch = 10_000
 
     init {
         workDir.mkdirs()
+        repositoryDir.mkdirs()
     }
 
     @Tool("get-file-tree")
@@ -661,7 +663,9 @@ internal class FileOperationsToolSet : ToolSet {
     private fun isPathSafe(file: File): Boolean {
         val canonicalPath = file.canonicalPath
         val workDirPath = workDir.canonicalPath
-        return canonicalPath.startsWith(workDirPath)
+        val repositoryDirPath = repositoryDir.canonicalPath
+        // Allow access to both code-modifications (for writing) and repository-analyzer (for reading)
+        return canonicalPath.startsWith(workDirPath) || canonicalPath.startsWith(repositoryDirPath)
     }
 }
 

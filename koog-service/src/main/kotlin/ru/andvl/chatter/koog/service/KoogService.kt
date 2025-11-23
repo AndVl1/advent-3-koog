@@ -854,6 +854,219 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
     }
 
     /**
+     * Analyze repository structure and content
+     *
+     * This method:
+     * - Clones GitHub repository
+     * - Analyzes file structure, dependencies, build tools
+     * - Generates summary of the codebase
+     * - Optionally creates embeddings for RAG
+     *
+     * @param request Repository analysis request
+     * @param promptExecutor Prompt executor for LLM calls (currently unused, agent is LLM-free)
+     * @param provider LLM provider to use (currently unused, agent is LLM-free)
+     * @return RepositoryAnalysisResult with analysis data
+     */
+    suspend fun analyzeRepository(
+        request: ru.andvl.chatter.shared.models.codeagent.RepositoryAnalysisRequest,
+        promptExecutor: PromptExecutor,
+        provider: Provider? = null,
+    ): ru.andvl.chatter.shared.models.codeagent.RepositoryAnalysisResult {
+        return withContext(Dispatchers.IO) {
+            logger.info { "Starting repository analysis for: ${request.githubUrl}" }
+            logger.info { "  Analysis type: ${request.analysisType}" }
+            logger.info { "  Enable embeddings: ${request.enableEmbeddings}" }
+
+            // This agent is LLM-free, so we don't need a model or prompt
+            // It uses rule-based analysis only
+            val emptyPrompt = prompt(
+                Prompt(emptyList(), "repository-analyzer", params = LLMParams())
+            ) {}
+
+            try {
+                val strategy = ru.andvl.chatter.koog.agents.repoanalyzer.getRepositoryAnalyzerStrategy()
+
+                // We don't need an actual LLM model since this agent doesn't use LLM
+                // However, AIAgentConfig requires a model, so we provide a dummy one
+                val dummyModel = OpenRouterModels.Gemini2_5Flash
+
+                val agentConfig = AIAgentConfig(
+                    prompt = emptyPrompt,
+                    model = dummyModel,
+                    maxAgentIterations = 50,
+                )
+
+                val agent = AIAgent(
+                    promptExecutor = promptExecutor,
+                    toolRegistry = ToolRegistry {},
+                    strategy = strategy,
+                    agentConfig = agentConfig,
+                    id = "repository-analyzer",
+                    installFeatures = {
+                        install(Tracing) {
+                            val outputPath = Path("./logs/koog_repository_analyzer_trace.log")
+                            addMessageProcessor(TraceFeatureMessageLogWriter(logger))
+                            addMessageProcessor(TraceFeatureMessageFileWriter(
+                                outputPath,
+                                { path: Path -> SystemFileSystem.sink(path).buffered() }
+                            ))
+                        }
+                    }
+                )
+
+                val result = agent.run(request)
+
+                logger.info { "Repository analysis completed successfully" }
+                logger.info { "  Repository: ${result.repositoryName}" }
+                logger.info { "  Files: ${result.fileCount}" }
+                logger.info { "  Languages: ${result.mainLanguages.joinToString(", ")}" }
+
+                result
+            } catch (e: Exception) {
+                logger.error(e) { "Repository analysis failed" }
+                ru.andvl.chatter.shared.models.codeagent.RepositoryAnalysisResult(
+                    repositoryPath = "",
+                    repositoryName = request.githubUrl,
+                    summary = "Analysis failed",
+                    fileCount = 0,
+                    mainLanguages = emptyList(),
+                    structureTree = "",
+                    dependencies = emptyList(),
+                    buildTool = null,
+                    errorMessage = "Repository analysis failed: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Ask question about code in repository
+     *
+     * This method:
+     * - Uses RAG to find relevant code
+     * - Generates answer with code references
+     * - Maintains conversation history
+     *
+     * @param request Code QA request with question and history
+     * @param promptExecutor Prompt executor for LLM calls
+     * @param provider LLM provider to use
+     * @return CodeQAResponse with answer and code references
+     */
+    suspend fun askCodeQuestion(
+        request: ru.andvl.chatter.shared.models.codeagent.CodeQARequest,
+        promptExecutor: PromptExecutor,
+        provider: Provider? = null,
+    ): ru.andvl.chatter.shared.models.codeagent.CodeQAResponse {
+        return withContext(Dispatchers.IO) {
+            logger.info { "Starting Code QA for session: ${request.sessionId}" }
+            logger.info { "  Question: ${request.question}" }
+            logger.info { "  History size: ${request.history.size}" }
+
+            // Select model based on provider (declare outside try-catch for error handling)
+            val model = when (provider) {
+                Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
+                else -> OpenRouterModels.Gemini2_5Flash
+            }
+            val modelName = model.id
+
+            // Create prompt for Code QA agent
+            val codeQaPrompt = prompt(
+                Prompt(emptyList(), "code-qa-agent", params = LLMParams())
+            ) {}
+
+            try {
+                val strategy = ru.andvl.chatter.koog.agents.codeqa.getCodeQaStrategy(model)
+
+                val agentConfig = AIAgentConfig(
+                    prompt = codeQaPrompt,
+                    model = model,
+                    maxAgentIterations = 30,
+                )
+
+                // Setup tools: RAG + GitHub MCP (if available)
+                val toolRegistry = ToolRegistry {
+                    // RAG tools for semantic search
+                    tools(RagToolSet())
+                    // File operations for fallback search
+                    tools(FileOperationsToolSet())
+                }
+
+                // Configure RAG if session has indexed repository
+                // Note: RagToolContext would be set up here in production
+                // For now, it will be configured by the caller if needed
+
+                val agent = AIAgent(
+                    promptExecutor = promptExecutor,
+                    toolRegistry = toolRegistry,
+                    strategy = strategy,
+                    agentConfig = agentConfig,
+                    id = "code-qa-agent",
+                    installFeatures = {
+                        install(Tracing) {
+                            val outputPath = Path("./logs/koog_code_qa_trace.log")
+                            addMessageProcessor(TraceFeatureMessageLogWriter(logger))
+                            addMessageProcessor(TraceFeatureMessageFileWriter(
+                                outputPath,
+                                { path: Path -> SystemFileSystem.sink(path).buffered() }
+                            ))
+                        }
+                    }
+                )
+
+                val result = agent.run(request)
+
+                logger.info { "Code QA completed successfully" }
+                logger.info { "  Answer length: ${result.answer.length} characters" }
+                logger.info { "  Code references: ${result.codeReferences.size}" }
+                logger.info { "  Confidence: ${result.confidence}" }
+
+                result
+            } catch (e: IllegalArgumentException) {
+                // Session validation errors
+                logger.error(e) { "Code QA validation failed" }
+                ru.andvl.chatter.shared.models.codeagent.CodeQAResponse(
+                    answer = "Error: ${e.message}",
+                    codeReferences = emptyList(),
+                    confidence = 0.0f,
+                    model = modelName
+                )
+            } catch (e: Exception) {
+                logger.error(e) { "Code QA failed with exception" }
+                ru.andvl.chatter.shared.models.codeagent.CodeQAResponse(
+                    answer = "I encountered an error while processing your question: ${e.message}. Please try rephrasing your question or check that the repository session is valid.",
+                    codeReferences = emptyList(),
+                    confidence = 0.0f,
+                    model = modelName
+                )
+            }
+        }
+    }
+
+    /**
+     * Modify code with automatic checklist generation and verification
+     *
+     * This method:
+     * - Analyzes modification request
+     * - Generates checklist of tasks
+     * - Applies modifications step-by-step
+     * - Verifies each step
+     * - Creates branch and commits changes
+     *
+     * @param request Code modification request
+     * @param promptExecutor Prompt executor for LLM calls
+     * @param provider LLM provider to use
+     * @return CodeModificationResponse with checklist and results
+     */
+    suspend fun modifyCodeWithChecklist(
+        request: ru.andvl.chatter.shared.models.codeagent.CodeModificationRequest,
+        promptExecutor: PromptExecutor,
+        provider: Provider? = null,
+    ): ru.andvl.chatter.shared.models.codeagent.CodeModificationResponse {
+        // TODO: Implement Code Modifier Agent (Phase 5)
+        throw NotImplementedError("Code modification with checklist will be implemented in Phase 5")
+    }
+
+    /**
      * Get health status
      */
     fun getHealthStatus(): Map<String, Any> {

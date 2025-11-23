@@ -33,6 +33,7 @@ dependencies {
     implementation(libs.logback.classic)
 
     testImplementation(libs.kotlin.test.junit)
+    testImplementation(libs.junit.jupiter)
 }
 
 kotlin {
