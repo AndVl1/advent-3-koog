@@ -7,7 +7,6 @@ import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.llm.LLModel
-import kotlinx.serialization.json.*
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.codemodifier.*
 import ru.andvl.chatter.koog.model.codemodifier.*
@@ -20,11 +19,6 @@ private val logger = LoggerFactory.getLogger("codemodifier-docker-validation")
 
 private const val MAX_RETRIES = 2
 private const val DOCKER_OPERATION_TIMEOUT = 300 // 5 minutes
-
-private val json = Json {
-    ignoreUnknownKeys = true
-    isLenient = true
-}
 
 /**
  * Subgraph: LLM-based Docker Validation
@@ -168,25 +162,21 @@ private fun AIAgentSubgraphBuilderBase<ValidationCheckResult, DockerValidationRe
 
         val prompt = buildValidationPlanningPrompt(projectFiles, modifiedFilesList)
 
-        // Call LLM to generate strategy
-        val responseContent = llm.writeSession {
+        // Call LLM to generate strategy using structured output
+        val structuredResponse = llm.writeSession {
             appendPrompt {
                 system(prompt)
             }
-            val response = requestLLM()
-            response.content
+            requestLLMStructured<ValidationStrategy>()
         }
 
-        logger.debug("LLM response received: ${responseContent.take(200)}...")
+        logger.debug("LLM structured response received")
 
-        // Parse JSON response
-        val strategy = try {
-            parseValidationStrategy(responseContent)
-        } catch (e: Exception) {
-            logger.error("Failed to parse validation strategy from LLM response", e)
-            logger.error("Response was: $responseContent")
-            throw IllegalStateException("Failed to generate validation strategy: ${e.message}", e)
-        }
+        // Extract strategy from structured response
+        val strategy = structuredResponse.getOrElse { error ->
+            logger.error("Failed to get structured validation strategy from LLM", error)
+            throw IllegalStateException("Failed to generate validation strategy: ${error.message}", error)
+        }.structure
 
         logger.info("Generated validation strategy: ${strategy.projectTypeAnalysis}")
         logger.info("Build commands: ${strategy.buildCommands.size}, Test commands: ${strategy.testCommands.size}")
@@ -356,25 +346,21 @@ private fun AIAgentSubgraphBuilderBase<ValidationCheckResult, DockerValidationRe
             maxRetries = MAX_RETRIES
         )
 
-        // Call LLM to analyze
-        val responseContent = llm.writeSession {
+        // Call LLM to analyze using structured output
+        val structuredResponse = llm.writeSession {
             appendPrompt {
                 system(prompt)
             }
-            val response = requestLLM()
-            response.content
+            requestLLMStructured<ValidationAnalysis>()
         }
 
-        logger.debug("LLM analysis response received: ${responseContent.take(200)}...")
+        logger.debug("LLM structured analysis response received")
 
-        // Parse JSON response
-        val analysis = try {
-            parseValidationAnalysis(responseContent)
-        } catch (e: Exception) {
-            logger.error("Failed to parse validation analysis from LLM response", e)
-            logger.error("Response was: $responseContent")
-            throw IllegalStateException("Failed to analyze validation results: ${e.message}", e)
-        }
+        // Extract analysis from structured response
+        val analysis = structuredResponse.getOrElse { error ->
+            logger.error("Failed to get structured validation analysis from LLM", error)
+            throw IllegalStateException("Failed to analyze validation results: ${error.message}", error)
+        }.structure
 
         logger.info("LLM analysis: ${analysis.overallStatus}, shouldRetry=${analysis.shouldRetry}")
         if (analysis.errorDiagnosis != null) {
@@ -445,25 +431,21 @@ private fun AIAgentSubgraphBuilderBase<ValidationCheckResult, DockerValidationRe
             totalAttempts = retryCount + 1
         )
 
-        // Call LLM to generate report
-        val responseContent = llm.writeSession {
+        // Call LLM to generate report using structured output
+        val structuredResponse = llm.writeSession {
             appendPrompt {
                 system(prompt)
             }
-            val response = requestLLM()
-            response.content
+            requestLLMStructured<FinalValidationReport>()
         }
 
-        logger.debug("LLM report response received: ${responseContent.take(200)}...")
+        logger.debug("LLM structured report response received")
 
-        // Parse JSON response
-        val report = try {
-            parseValidationReport(responseContent)
-        } catch (e: Exception) {
-            logger.error("Failed to parse validation report from LLM response", e)
-            logger.error("Response was: $responseContent")
-            throw IllegalStateException("Failed to generate validation report: ${e.message}", e)
-        }
+        // Extract report from structured response
+        val report = structuredResponse.getOrElse { error ->
+            logger.error("Failed to get structured validation report from LLM", error)
+            throw IllegalStateException("Failed to generate validation report: ${error.message}", error)
+        }.structure
 
         logger.info("Final validation report generated: ${report.verdict}")
         storage.set(finalReportKey, report)
@@ -827,44 +809,3 @@ Generate a comprehensive, human-readable validation report.
 """.trim()
 }
 
-/**
- * Parse validation strategy from LLM JSON response
- */
-private fun parseValidationStrategy(jsonContent: String): ValidationStrategy {
-    val cleanedResponse = jsonContent
-        .trim()
-        .removePrefix("```json")
-        .removePrefix("```")
-        .removeSuffix("```")
-        .trim()
-
-    return json.decodeFromString<ValidationStrategy>(cleanedResponse)
-}
-
-/**
- * Parse validation analysis from LLM JSON response
- */
-private fun parseValidationAnalysis(jsonContent: String): ValidationAnalysis {
-    val cleanedResponse = jsonContent
-        .trim()
-        .removePrefix("```json")
-        .removePrefix("```")
-        .removeSuffix("```")
-        .trim()
-
-    return json.decodeFromString<ValidationAnalysis>(cleanedResponse)
-}
-
-/**
- * Parse validation report from LLM JSON response
- */
-private fun parseValidationReport(jsonContent: String): FinalValidationReport {
-    val cleanedResponse = jsonContent
-        .trim()
-        .removePrefix("```json")
-        .removePrefix("```")
-        .removeSuffix("```")
-        .trim()
-
-    return json.decodeFromString<FinalValidationReport>(cleanedResponse)
-}

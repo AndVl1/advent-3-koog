@@ -7,7 +7,6 @@ import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.llm.LLModel
-import kotlinx.serialization.json.*
 import org.slf4j.LoggerFactory
 import ru.andvl.chatter.koog.agents.codemodifier.*
 import ru.andvl.chatter.koog.model.codemodifier.*
@@ -15,11 +14,6 @@ import ru.andvl.chatter.koog.tools.FileOperationsToolSet
 import java.util.*
 
 private val logger = LoggerFactory.getLogger("codemodifier-modification-planning")
-
-private val json = Json {
-    ignoreUnknownKeys = true
-    isLenient = true
-}
 
 /**
  * Subgraph: Modification Planning
@@ -59,7 +53,7 @@ internal suspend fun AIAgentGraphStrategyBuilder<*, *>.subgraphModificationPlann
  * This node:
  * 1. Builds a comprehensive prompt with file contexts and patterns
  * 2. Calls LLM to generate structured modification plan (text-only, no tools)
- * 3. Parses the JSON response into ModificationPlan
+ * 3. Uses Koog structured output API to parse the JSON response into ModificationPlan
  * 4. Stores the plan for further processing
  */
 private fun AIAgentSubgraphBuilderBase<CodeAnalysisResult, PlanningResult>.nodeGenerateModificationPlan(
@@ -75,40 +69,36 @@ private fun AIAgentSubgraphBuilderBase<CodeAnalysisResult, PlanningResult>.nodeG
         val prompt = buildModificationPrompt(analysisResult, instructions, maxChanges)
         logger.debug("Prompt built with ${analysisResult.fileContexts.size} file contexts")
 
-        // Call LLM to generate modification plan (text-only, no tools)
-        val responseContent = llm.writeSession {
+        // Call LLM to generate modification plan using structured output
+        val structuredResponse = llm.writeSession {
             appendPrompt {
                 system(prompt)
             }
 
-            val response = requestLLM()
-            response.content
+            requestLLMStructured<ModificationPlan>()
         }
 
-        logger.debug("LLM response received: ${responseContent.take(200)}...")
+        logger.debug("LLM structured response received")
 
-        // Clean markdown artifacts from LLM response (e.g., ```json wrappers)
-        val cleanedResponse = responseContent
-            .trim()
-            .removePrefix("```json")
-            .removePrefix("```")
-            .removeSuffix("```")
-            .trim()
+        // Extract plan from structured response
+        val plan = structuredResponse.getOrElse { error ->
+            logger.error("Failed to get structured modification plan from LLM", error)
+            throw IllegalStateException("Failed to generate valid modification plan: ${error.message}", error)
+        }.structure
 
-        // Parse JSON response
-        val plan = try {
-            parseModificationPlan(cleanedResponse, maxChanges)
-        } catch (e: Exception) {
-            logger.error("Failed to parse modification plan from LLM response", e)
-            logger.error("Response was: $responseContent")
-            throw IllegalStateException("Failed to generate valid modification plan: ${e.message}", e)
+        // Validate and limit changes
+        val validatedPlan = if (plan.changes.size > maxChanges) {
+            logger.warn("Plan has ${plan.changes.size} changes, limiting to $maxChanges")
+            plan.copy(changes = plan.changes.take(maxChanges))
+        } else {
+            plan
         }
 
-        logger.info("Generated plan with ${plan.changes.size} changes")
-        logger.info("Estimated complexity: ${plan.estimatedComplexity}")
-        storage.set(modificationPlanKey, plan)
+        logger.info("Generated plan with ${validatedPlan.changes.size} changes")
+        logger.info("Estimated complexity: ${validatedPlan.estimatedComplexity}")
+        storage.set(modificationPlanKey, validatedPlan)
 
-        plan
+        validatedPlan
     }
 
 /**
@@ -256,131 +246,6 @@ private fun buildModificationPrompt(
 }
 
 
-/**
- * Estimate complexity based on number of changes
- */
-private fun estimateComplexity(changesCount: Int): Complexity {
-    return when {
-        changesCount <= 5 -> Complexity.SIMPLE
-        changesCount <= 15 -> Complexity.MODERATE
-        changesCount <= 30 -> Complexity.COMPLEX
-        else -> Complexity.CRITICAL
-    }
-}
-
-/**
- * Parse modification plan from JSON
- *
- * Uses kotlinx.serialization for proper JSON parsing.
- * Handles multi-line code content in old_content and new_content fields.
- */
-private fun parseModificationPlan(jsonContent: String, maxChanges: Int): ModificationPlan {
-    try {
-        val changes = mutableListOf<ProposedChange>()
-
-        // Parse using kotlinx.serialization only - no regex fallback!
-        val jsonElement = json.parseToJsonElement(jsonContent)
-
-        if (jsonElement !is JsonObject) {
-            logger.error("Expected JSON object, got: ${jsonElement::class.simpleName}")
-            throw IllegalStateException("Invalid JSON structure")
-        }
-
-        // Extract rationale
-        val rationale = jsonElement["rationale"]?.jsonPrimitive?.contentOrNull
-            ?: "Modification plan generated"
-
-        // Extract complexity
-        val complexityStr = jsonElement["estimated_complexity"]?.jsonPrimitive?.contentOrNull
-        val complexity = when (complexityStr?.uppercase()) {
-            "SIMPLE" -> Complexity.SIMPLE
-            "MODERATE" -> Complexity.MODERATE
-            "COMPLEX" -> Complexity.COMPLEX
-            "CRITICAL" -> Complexity.CRITICAL
-            else -> Complexity.MODERATE
-        }
-
-        // Parse changes array
-        val changesArray = jsonElement["changes"] as? JsonArray
-        if (changesArray == null) {
-            logger.error("No 'changes' array found in JSON")
-            throw IllegalStateException("Missing 'changes' array in modification plan")
-        }
-
-        changesArray.take(maxChanges).forEach { changeElement ->
-            val changeObj = changeElement as? JsonObject
-            if (changeObj != null) {
-                val change = parseChangeFromJson(changeObj)
-                if (change != null) {
-                    changes.add(change)
-                } else {
-                    logger.warn("Failed to parse change object: $changeObj")
-                }
-            }
-        }
-
-        if (changes.isEmpty()) {
-            logger.error("No changes extracted from plan. JSON: ${jsonContent.take(500)}")
-            throw IllegalStateException("No changes extracted from modification plan")
-        }
-
-        logger.info("Successfully parsed ${changes.size} changes from LLM response")
-
-        return ModificationPlan(
-            changes = changes,
-            rationale = rationale,
-            estimatedComplexity = complexity
-        )
-    } catch (e: Exception) {
-        logger.error("Failed to parse modification plan JSON", e)
-        logger.error("JSON content (first 500 chars): ${jsonContent.take(500)}")
-        throw IllegalStateException("Failed to parse modification plan: ${e.message}", e)
-    }
-}
-
-/**
- * Parse a single change from JsonObject
- */
-private fun parseChangeFromJson(changeObj: kotlinx.serialization.json.JsonObject): ProposedChange? {
-    try {
-        val filePath = changeObj["file_path"]?.jsonPrimitive?.content ?: return null
-        val changeType = parseChangeType(changeObj["change_type"]?.jsonPrimitive?.content ?: "MODIFY")
-        val description = changeObj["description"]?.jsonPrimitive?.content ?: ""
-        val startLine = changeObj["start_line"]?.jsonPrimitive?.intOrNull
-        val endLine = changeObj["end_line"]?.jsonPrimitive?.intOrNull
-        val oldContent = changeObj["old_content"]?.jsonPrimitive?.contentOrNull
-        val newContent = changeObj["new_content"]?.jsonPrimitive?.content ?: ""
-        val dependsOn = (changeObj["depends_on"] as? kotlinx.serialization.json.JsonArray)
-            ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-            ?: emptyList()
-
-        return ProposedChange(
-            changeId = "", // Will be assigned later
-            filePath = filePath,
-            changeType = changeType,
-            description = description,
-            startLine = startLine,
-            endLine = endLine,
-            oldContent = oldContent,
-            newContent = newContent,
-            dependsOn = dependsOn
-        )
-    } catch (e: Exception) {
-        logger.warn("Failed to parse change from JSON object", e)
-        return null
-    }
-}
-
-private fun parseChangeType(typeStr: String): ChangeType {
-    return when (typeStr.uppercase()) {
-        "CREATE" -> ChangeType.CREATE
-        "MODIFY" -> ChangeType.MODIFY
-        "DELETE" -> ChangeType.DELETE
-        "RENAME" -> ChangeType.RENAME
-        "REFACTOR" -> ChangeType.REFACTOR
-        else -> ChangeType.MODIFY
-    }
-}
 
 /**
  * Topological sort for change dependencies
