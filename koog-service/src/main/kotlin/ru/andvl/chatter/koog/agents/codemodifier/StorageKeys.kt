@@ -39,10 +39,17 @@ internal val validationRetryCountKey = createStorageKey<Int>("validation-retry-c
 // Response building keys
 internal val finalResultKey = createStorageKey<CodeModificationResult>("final-result")
 
-// Docker validation keys
+// Docker validation keys (algorithmic - deprecated)
 internal val dockerValidationEnabledKey = createStorageKey<Boolean>("docker-validation-enabled")
 internal val dockerAvailableKey = createStorageKey<Boolean>("docker-available")
 internal val dockerValidationResultKey = createStorageKey<DockerValidationResult>("docker-validation-result")
 internal val validationImageNameKey = createStorageKey<String>("validation-image-name")
 internal val validationDirectoryKey = createStorageKey<String>("validation-directory")
 internal val detectedProjectTypeKey = createStorageKey<ProjectType>("detected-project-type")
+
+// LLM-based Docker validation keys
+internal val validationStrategyKey = createStorageKey<ValidationStrategy>("validation-strategy")
+internal val executionResultsKey = createStorageKey<List<CommandExecutionResult>>("execution-results")
+internal val validationAnalysisKey = createStorageKey<ValidationAnalysis>("validation-analysis")
+internal val dockerRetryCountKey = createStorageKey<Int>("docker-retry-count")
+internal val finalReportKey = createStorageKey<FinalValidationReport>("final-report")

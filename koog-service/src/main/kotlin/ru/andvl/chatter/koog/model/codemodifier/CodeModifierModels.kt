@@ -282,3 +282,130 @@ internal enum class ProjectType(
         detectionFiles = emptyList()
     )
 }
+
+// LLM-based Docker Validation Models
+
+/**
+ * LLM-generated validation strategy
+ */
+@Serializable
+internal data class ValidationStrategy(
+    @SerialName("approach_description")
+    val approachDescription: String,
+    @SerialName("project_type_analysis")
+    val projectTypeAnalysis: String,
+    @SerialName("dockerfile_content")
+    val dockerfileContent: String,
+    @SerialName("build_commands")
+    val buildCommands: List<String>,
+    @SerialName("test_commands")
+    val testCommands: List<String>,
+    @SerialName("expected_outcomes")
+    val expectedOutcomes: String
+)
+
+/**
+ * Result of executing a Docker command
+ */
+@Serializable
+internal data class CommandExecutionResult(
+    @SerialName("command")
+    val command: String,
+    @SerialName("success")
+    val success: Boolean,
+    @SerialName("exit_code")
+    val exitCode: Int,
+    @SerialName("stdout")
+    val stdout: List<String>,
+    @SerialName("stderr")
+    val stderr: List<String>,
+    @SerialName("duration_seconds")
+    val durationSeconds: Int
+)
+
+/**
+ * LLM analysis of validation results
+ */
+@Serializable
+internal data class ValidationAnalysis(
+    @SerialName("overall_status")
+    val overallStatus: ValidationStatus,
+    @SerialName("build_analysis")
+    val buildAnalysis: String,
+    @SerialName("test_analysis")
+    val testAnalysis: String?,
+    @SerialName("error_diagnosis")
+    val errorDiagnosis: String?,
+    @SerialName("fix_suggestions")
+    val fixSuggestions: List<FixSuggestion>,
+    @SerialName("should_retry")
+    val shouldRetry: Boolean,
+    @SerialName("retry_reason")
+    val retryReason: String?
+)
+
+/**
+ * Status of validation attempt
+ */
+@Serializable
+enum class ValidationStatus {
+    @SerialName("SUCCESS")
+    SUCCESS,
+    @SerialName("RETRY_NEEDED")
+    RETRY_NEEDED,
+    @SerialName("FAILED")
+    FAILED
+}
+
+/**
+ * LLM-suggested fix for validation failure
+ */
+@Serializable
+internal data class FixSuggestion(
+    @SerialName("description")
+    val description: String,
+    @SerialName("fix_type")
+    val fixType: FixType,
+    @SerialName("updated_dockerfile")
+    val updatedDockerfile: String?,
+    @SerialName("updated_build_commands")
+    val updatedBuildCommands: List<String>?,
+    @SerialName("updated_test_commands")
+    val updatedTestCommands: List<String>?
+)
+
+/**
+ * Type of fix to apply
+ */
+@Serializable
+enum class FixType {
+    @SerialName("DOCKERFILE_MODIFICATION")
+    DOCKERFILE_MODIFICATION,
+    @SerialName("BUILD_COMMAND_CHANGE")
+    BUILD_COMMAND_CHANGE,
+    @SerialName("TEST_COMMAND_CHANGE")
+    TEST_COMMAND_CHANGE,
+    @SerialName("DEPENDENCY_FIX")
+    DEPENDENCY_FIX,
+    @SerialName("CONFIGURATION_CHANGE")
+    CONFIGURATION_CHANGE
+}
+
+/**
+ * Final validation report from LLM
+ */
+@Serializable
+internal data class FinalValidationReport(
+    @SerialName("summary")
+    val summary: String,
+    @SerialName("build_status")
+    val buildStatus: String,
+    @SerialName("test_status")
+    val testStatus: String?,
+    @SerialName("recommendations")
+    val recommendations: List<String>,
+    @SerialName("total_attempts")
+    val totalAttempts: Int,
+    @SerialName("verdict")
+    val verdict: String
+)

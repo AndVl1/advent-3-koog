@@ -51,7 +51,7 @@ suspend fun getCodeModifierStrategy(model: LLModel): AIAgentGraphStrategy<CodeMo
         val subgraphCodeAnalysis by subgraphCodeAnalysis(model)
         val subgraphModificationPlanning by subgraphModificationPlanning(model)
         val subgraphValidation by subgraphValidation(model)
-        val subgraphDockerValidation by subgraphDockerValidation()
+        val subgraphDockerValidation by subgraphDockerValidation(model)
         val subgraphResponseBuilding by subgraphResponseBuilding()
 
         // Linear flow through all subgraphs
