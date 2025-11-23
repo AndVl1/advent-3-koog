@@ -12,14 +12,18 @@ import java.nio.file.Paths
 import kotlin.io.path.isDirectory
 
 @LLMDescription("Tools for file system operations: reading, searching, modifying files in a repository")
-internal class FileOperationsToolSet : ToolSet {
+internal class FileOperationsToolSet(
+    private val allowedBasePath: String? = null
+) : ToolSet {
     private val logger = LoggerFactory.getLogger(FileOperationsToolSet::class.java)
     private val workDir = File("/tmp/code-modifications")
+    private val repositoryDir = File("/tmp/repository-analyzer")
     private val maxFileSize = 10 * 1024 * 1024 // 10 MB
     private val maxFilesForSearch = 10_000
 
     init {
         workDir.mkdirs()
+        repositoryDir.mkdirs()
     }
 
     @Tool("get-file-tree")
@@ -661,7 +665,19 @@ internal class FileOperationsToolSet : ToolSet {
     private fun isPathSafe(file: File): Boolean {
         val canonicalPath = file.canonicalPath
         val workDirPath = workDir.canonicalPath
-        return canonicalPath.startsWith(workDirPath)
+        val repositoryDirPath = repositoryDir.canonicalPath
+
+        // Check hardcoded paths
+        val isInHardcodedPaths = canonicalPath.startsWith(workDirPath) ||
+                                 canonicalPath.startsWith(repositoryDirPath)
+
+        // Check custom allowed path if provided
+        val isInCustomPath = allowedBasePath?.let { basePath ->
+            val baseDir = File(basePath)
+            canonicalPath.startsWith(baseDir.canonicalPath)
+        } ?: false
+
+        return isInHardcodedPaths || isInCustomPath
     }
 }
 

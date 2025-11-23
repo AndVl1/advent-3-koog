@@ -465,6 +465,75 @@ internal class DockerToolSet : ToolSet {
             )
         }
     }
+
+    @Tool("list-local-images")
+    @LLMDescription("List all locally available Docker images that can be used without pulling from registry")
+    fun listLocalImages(): LocalImagesResult {
+        return try {
+            val process = ProcessBuilder("docker", "images", "--format", "{{.Repository}}:{{.Tag}}")
+                .redirectErrorStream(true)
+                .start()
+
+            val output = process.inputStream.bufferedReader().readText()
+            val exitCode = process.waitFor()
+
+            if (exitCode == 0) {
+                val images = output.lines().filter { it.isNotBlank() && it != "<none>:<none>" }
+                logger.info("Found ${images.size} local Docker images")
+                LocalImagesResult(
+                    success = true,
+                    images = images,
+                    message = "Found ${images.size} local images"
+                )
+            } else {
+                logger.error("Failed to list local images. Exit code: $exitCode")
+                LocalImagesResult(
+                    success = false,
+                    images = emptyList(),
+                    message = "Failed to list local images with exit code $exitCode"
+                )
+            }
+        } catch (e: Exception) {
+            logger.error("Error listing local images", e)
+            LocalImagesResult(
+                success = false,
+                images = emptyList(),
+                message = "Exception: ${e.message}"
+            )
+        }
+    }
+
+    @Tool("check-image-exists-locally")
+    @LLMDescription("Check if a specific Docker image exists locally (no network required)")
+    fun checkImageExistsLocally(
+        @LLMDescription("Image name with tag (e.g., 'node:18-alpine', 'python:3.9-slim')")
+        imageName: String
+    ): ImageExistsResult {
+        return try {
+            val process = ProcessBuilder("docker", "images", "-q", imageName)
+                .redirectErrorStream(true)
+                .start()
+
+            val output = process.inputStream.bufferedReader().readText().trim()
+            val exitCode = process.waitFor()
+
+            val exists = exitCode == 0 && output.isNotBlank()
+
+            logger.info("Image '$imageName' exists locally: $exists")
+            ImageExistsResult(
+                exists = exists,
+                imageName = imageName,
+                message = if (exists) "Image available locally" else "Image not found locally, will need to pull"
+            )
+        } catch (e: Exception) {
+            logger.error("Error checking if image exists", e)
+            ImageExistsResult(
+                exists = false,
+                imageName = imageName,
+                message = "Exception: ${e.message}"
+            )
+        }
+    }
 }
 
 // Result classes
@@ -547,4 +616,24 @@ data class RunResult(
     val message: String,
     @SerialName("duration_seconds")
     val durationSeconds: Int
+)
+
+@Serializable
+data class LocalImagesResult(
+    @SerialName("success")
+    val success: Boolean,
+    @SerialName("images")
+    val images: List<String>,
+    @SerialName("message")
+    val message: String
+)
+
+@Serializable
+data class ImageExistsResult(
+    @SerialName("exists")
+    val exists: Boolean,
+    @SerialName("image_name")
+    val imageName: String,
+    @SerialName("message")
+    val message: String
 )

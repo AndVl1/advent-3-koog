@@ -30,6 +30,13 @@ data class AppState(
     val forceSkipDocker: Boolean = true,
     // Embeddings integration
     val enableEmbeddings: Boolean = false,
+
+    // Code Modifier configuration
+    val codeModifierProvider: LLMProvider = LLMProvider.OPEN_ROUTER,
+    val codeModifierSelectedModel: String = LLMProvider.OPEN_ROUTER.defaultModel,
+    val codeModifierUseMainForFixing: Boolean = true,
+    val codeModifierFixingModel: String = LLMProvider.OPEN_ROUTER.defaultModel,
+
     val isLoading: Boolean = false,
     val analysisResult: GithubAnalysisResponse? = null,
     val error: String? = null,

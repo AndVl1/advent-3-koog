@@ -44,6 +44,7 @@ import ru.andvl.chatter.koog.agents.memory.githubMemoryProvider
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
 import ru.andvl.chatter.koog.agents.utils.createFixingModel
+import ru.andvl.chatter.koog.config.KoogModelProvider
 import ru.andvl.chatter.koog.embeddings.model.EmbeddingConfig
 import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.codemod.CodeModificationRequest
@@ -74,6 +75,16 @@ class KoogService {
         private val dotenv: Dotenv = Dotenv.configure()
             .ignoreIfMissing()
             .load()
+
+        /**
+         * Default model for main tasks (can be overridden via KOOG_DEFAULT_MODEL env var)
+         */
+        private val DEFAULT_MODEL_ID = dotenv["KOOG_DEFAULT_MODEL"] ?: "qwen/qwen3-coder"
+
+        /**
+         * Model used for error fixing/parsing (can be overridden via KOOG_FIXING_MODEL env var)
+         */
+        private val FIXING_MODEL_ID = dotenv["KOOG_FIXING_MODEL"] ?: "z-ai/glm-4.5-air"
     }
 
     private fun buildGithubSystemPrompt(): String {
@@ -157,20 +168,9 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         promptExecutor: PromptExecutor,
         provider: Provider? = null,
     ): ChatResponse {
-        val model: LLModel = when (provider) {
-            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> LLModel(
-                provider = LLMProvider.OpenRouter,
-                id = "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
-                capabilities = listOf(
-                    LLMCapability.Temperature,
-                    LLMCapability.Completion,
-                ),
-                contextLength = 16_000, //
-            )
+        val modelProvider = KoogModelProvider.fromProvider(provider)
+        val model = modelProvider.createSimpleLLModel(DEFAULT_MODEL_ID)
 
-            else -> OpenRouterModels.Gemini2_5Flash
-        }
         return withContext(Dispatchers.IO) {
             val systemPrompt = buildSystemPrompt(request)
 
@@ -265,11 +265,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         promptExecutor: PromptExecutor,
         provider: Provider? = null,
     ): ConversationResponse {
-        val model: LLModel = when (provider) {
-            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> OpenRouterModels.Gemini2_5Flash
-            else -> OpenRouterModels.Gemini2_5Flash
-        }
+        val modelProvider = KoogModelProvider.fromProvider(provider)
+        val model = modelProvider.createLLModel(DEFAULT_MODEL_ID)
 
         return withContext(Dispatchers.IO) {
             // Let the strategy nodes build their own prompts with personalization
@@ -348,36 +345,9 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         promptExecutor: PromptExecutor,
         provider: Provider? = null,
     ): CodeModificationResponse {
-        val model: LLModel = when (provider) {
-            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> LLModel(
-                provider = LLMProvider.OpenRouter,
-                id = "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
-                capabilities = listOf(
-                    LLMCapability.Temperature,
-                    LLMCapability.Completion,
-                    LLMCapability.Tools,
-                    LLMCapability.OpenAIEndpoint.Completions,
-                    LLMCapability.MultipleChoices,
-                ),
-                contextLength = 200_000, //
-            )
-            else -> OpenRouterModels.Gemini2_5Flash
-        }
-
-        val fixingModel = when (provider) {
-            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> LLModel(
-                provider = LLMProvider.OpenRouter,
-                id = "z-ai/glm-4.5-air", // "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
-                capabilities = listOf(
-                    LLMCapability.Temperature,
-                    LLMCapability.Completion,
-                ),
-                contextLength = 16_000, //
-            )
-            else -> OpenRouterModels.GPT5Nano
-        }
+        val modelProvider = KoogModelProvider.fromProvider(provider)
+        val model = modelProvider.createLLModel(DEFAULT_MODEL_ID)
+        val fixingModel = modelProvider.createSimpleLLModel(FIXING_MODEL_ID)
 
         return withContext(Dispatchers.IO) {
             val emptyPrompt = prompt(
@@ -849,6 +819,338 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                 emit(AnalysisEventOrResult.Result(result))
             } else {
                 emit(AnalysisEventOrResult.Error("Analysis failed", null))
+            }
+        }
+    }
+
+    /**
+     * Analyze repository structure and content
+     *
+     * This method:
+     * - Clones GitHub repository
+     * - Analyzes file structure, dependencies, build tools
+     * - Generates summary of the codebase
+     * - Optionally creates embeddings for RAG
+     *
+     * @param request Repository analysis request
+     * @param promptExecutor Prompt executor for LLM calls (currently unused, agent is LLM-free)
+     * @param provider LLM provider to use (currently unused, agent is LLM-free)
+     * @return RepositoryAnalysisResult with analysis data
+     */
+    suspend fun analyzeRepository(
+        request: ru.andvl.chatter.shared.models.codeagent.RepositoryAnalysisRequest,
+        promptExecutor: PromptExecutor,
+        provider: Provider? = null,
+    ): ru.andvl.chatter.shared.models.codeagent.RepositoryAnalysisResult {
+        return withContext(Dispatchers.IO) {
+            logger.info { "Starting repository analysis for: ${request.githubUrl}" }
+            logger.info { "  Analysis type: ${request.analysisType}" }
+            logger.info { "  Enable embeddings: ${request.enableEmbeddings}" }
+
+            // This agent is LLM-free, so we don't need a model or prompt
+            // It uses rule-based analysis only
+            val emptyPrompt = prompt(
+                Prompt(emptyList(), "repository-analyzer", params = LLMParams())
+            ) {}
+
+            try {
+                val strategy = ru.andvl.chatter.koog.agents.repoanalyzer.getRepositoryAnalyzerStrategy()
+
+                // We don't need an actual LLM model since this agent doesn't use LLM
+                // However, AIAgentConfig requires a model, so we provide a dummy one
+                val dummyModel = OpenRouterModels.Gemini2_5Flash
+
+                val agentConfig = AIAgentConfig(
+                    prompt = emptyPrompt,
+                    model = dummyModel,
+                    maxAgentIterations = 50,
+                )
+
+                val agent = AIAgent(
+                    promptExecutor = promptExecutor,
+                    toolRegistry = ToolRegistry {},
+                    strategy = strategy,
+                    agentConfig = agentConfig,
+                    id = "repository-analyzer",
+                    installFeatures = {
+                        install(Tracing) {
+                            val outputPath = Path("./logs/koog_repository_analyzer_trace.log")
+                            addMessageProcessor(TraceFeatureMessageLogWriter(logger))
+                            addMessageProcessor(TraceFeatureMessageFileWriter(
+                                outputPath,
+                                { path: Path -> SystemFileSystem.sink(path).buffered() }
+                            ))
+                        }
+                    }
+                )
+
+                val result = agent.run(request)
+
+                logger.info { "Repository analysis completed successfully" }
+                logger.info { "  Repository: ${result.repositoryName}" }
+                logger.info { "  Files: ${result.fileCount}" }
+                logger.info { "  Languages: ${result.mainLanguages.joinToString(", ")}" }
+
+                result
+            } catch (e: Exception) {
+                logger.error(e) { "Repository analysis failed" }
+                ru.andvl.chatter.shared.models.codeagent.RepositoryAnalysisResult(
+                    repositoryPath = "",
+                    repositoryName = request.githubUrl,
+                    summary = "Analysis failed",
+                    fileCount = 0,
+                    mainLanguages = emptyList(),
+                    structureTree = "",
+                    dependencies = emptyList(),
+                    buildTool = null,
+                    errorMessage = "Repository analysis failed: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Ask question about code in repository
+     *
+     * This method:
+     * - Uses RAG to find relevant code
+     * - Generates answer with code references
+     * - Maintains conversation history
+     *
+     * @param request Code QA request with question and history
+     * @param promptExecutor Prompt executor for LLM calls
+     * @param provider LLM provider to use
+     * @return CodeQAResponse with answer and code references
+     */
+    suspend fun askCodeQuestion(
+        request: ru.andvl.chatter.shared.models.codeagent.CodeQARequest,
+        promptExecutor: PromptExecutor,
+        provider: Provider? = null,
+    ): ru.andvl.chatter.shared.models.codeagent.CodeQAResponse {
+        return withContext(Dispatchers.IO) {
+            logger.info { "Starting Code QA for session: ${request.sessionId}" }
+            logger.info { "  Question: ${request.question}" }
+            logger.info { "  History size: ${request.history.size}" }
+
+            // Select model based on provider (declare outside try-catch for error handling)
+            val model = when (provider) {
+                Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
+                else -> OpenRouterModels.Gemini2_5Flash
+            }
+            val modelName = model.id
+
+            // Create prompt for Code QA agent
+            val codeQaPrompt = prompt(
+                Prompt(emptyList(), "code-qa-agent", params = LLMParams())
+            ) {}
+
+            try {
+                val strategy = ru.andvl.chatter.koog.agents.codeqa.getCodeQaStrategy(model)
+
+                val agentConfig = AIAgentConfig(
+                    prompt = codeQaPrompt,
+                    model = model,
+                    maxAgentIterations = 30,
+                )
+
+                // Setup tools: RAG + GitHub MCP (if available)
+                val toolRegistry = ToolRegistry {
+                    // RAG tools for semantic search
+                    tools(RagToolSet())
+                    // File operations for fallback search
+                    tools(FileOperationsToolSet())
+                }
+
+                // Configure RAG if session has indexed repository
+                // Note: RagToolContext would be set up here in production
+                // For now, it will be configured by the caller if needed
+
+                val agent = AIAgent(
+                    promptExecutor = promptExecutor,
+                    toolRegistry = toolRegistry,
+                    strategy = strategy,
+                    agentConfig = agentConfig,
+                    id = "code-qa-agent",
+                    installFeatures = {
+                        install(Tracing) {
+                            val outputPath = Path("./logs/koog_code_qa_trace.log")
+                            addMessageProcessor(TraceFeatureMessageLogWriter(logger))
+                            addMessageProcessor(TraceFeatureMessageFileWriter(
+                                outputPath,
+                                { path: Path -> SystemFileSystem.sink(path).buffered() }
+                            ))
+                        }
+                    }
+                )
+
+                val result = agent.run(request)
+
+                logger.info { "Code QA completed successfully" }
+                logger.info { "  Answer length: ${result.answer.length} characters" }
+                logger.info { "  Code references: ${result.codeReferences.size}" }
+                logger.info { "  Confidence: ${result.confidence}" }
+
+                result
+            } catch (e: IllegalArgumentException) {
+                // Session validation errors
+                logger.error(e) { "Code QA validation failed" }
+                ru.andvl.chatter.shared.models.codeagent.CodeQAResponse(
+                    answer = "Error: ${e.message}",
+                    codeReferences = emptyList(),
+                    confidence = 0.0f,
+                    model = modelName
+                )
+            } catch (e: Exception) {
+                logger.error(e) { "Code QA failed with exception" }
+                ru.andvl.chatter.shared.models.codeagent.CodeQAResponse(
+                    answer = "I encountered an error while processing your question: ${e.message}. Please try rephrasing your question or check that the repository session is valid.",
+                    codeReferences = emptyList(),
+                    confidence = 0.0f,
+                    model = modelName
+                )
+            }
+        }
+    }
+
+    /**
+     * Modify code using the Code Modifier Agent
+     *
+     * This method:
+     * - Validates session and file scope
+     * - Analyzes code context
+     * - Generates detailed modification plan
+     * - Validates syntax and detects breaking changes
+     * - Returns proposed changes (does NOT apply them automatically)
+     *
+     * @param request Code modification request
+     * @param promptExecutor Prompt executor for LLM calls
+     * @param provider LLM provider to use
+     * @return CodeModificationResponse with proposed changes
+     */
+    suspend fun modifyCode(
+        request: ru.andvl.chatter.shared.models.codeagent.CodeModificationRequest,
+        promptExecutor: PromptExecutor,
+        provider: Provider? = null,
+    ): ru.andvl.chatter.shared.models.codeagent.CodeModificationResponse {
+        val modelProvider = KoogModelProvider.fromProvider(provider)
+        val model = modelProvider.createLLModel(DEFAULT_MODEL_ID)
+
+        return withContext(Dispatchers.IO) {
+            logger.info { "Starting code modification for session: ${request.sessionId}" }
+            logger.info { "  Instructions: ${request.instructions.take(100)}..." }
+            logger.info { "  File scope: ${request.fileScope?.size ?: 0} files" }
+
+            val emptyPrompt = prompt(
+                Prompt(emptyList(), "code-modifier-agent", params = LLMParams())
+            ) {}
+
+            try {
+                val strategy = ru.andvl.chatter.koog.agents.codemodifier.getCodeModifierStrategy(model)
+
+                val agentConfig = AIAgentConfig(
+                    prompt = emptyPrompt,
+                    model = model,
+                    maxAgentIterations = 100,
+                )
+
+                val toolRegistry = ToolRegistry {
+                    tools(FileOperationsToolSet())
+                    tools(RagToolSet())
+                }
+
+                val agent = AIAgent(
+                    promptExecutor = promptExecutor,
+                    toolRegistry = toolRegistry,
+                    strategy = strategy,
+                    agentConfig = agentConfig,
+                    id = "code-modifier-agent",
+                    installFeatures = {
+                        install(Tracing) {
+                            val outputPath = Path("./logs/koog_code_modifier_trace.log")
+                            addMessageProcessor(TraceFeatureMessageLogWriter(logger))
+                            addMessageProcessor(TraceFeatureMessageFileWriter(
+                                outputPath,
+                                { path: Path -> SystemFileSystem.sink(path).buffered() }
+                            ))
+                        }
+                    }
+                )
+
+                // Convert shared model to internal model
+                val internalRequest = ru.andvl.chatter.koog.model.codemodifier.CodeModificationRequest(
+                    sessionId = request.sessionId,
+                    instructions = request.instructions,
+                    fileScope = request.fileScope,
+                    enableValidation = request.enableValidation,
+                    maxChanges = request.maxChanges
+                )
+
+                val result = agent.run(internalRequest)
+
+                logger.info { "Code modification completed: ${if (result.success) "SUCCESS" else "FAILED"}" }
+                logger.info { "  Files affected: ${result.totalFilesAffected}" }
+                logger.info { "  Total changes: ${result.totalChanges}" }
+                logger.info { "  Complexity: ${result.complexity}" }
+                logger.info { "  Breaking changes: ${result.breakingChangesDetected}" }
+
+                // Convert internal result to shared model
+                ru.andvl.chatter.shared.models.codeagent.CodeModificationResponse(
+                    success = result.success,
+                    modificationPlan = result.modificationPlan?.let { plan ->
+                        ru.andvl.chatter.shared.models.codeagent.ModificationPlan(
+                            changes = plan.changes.map { change ->
+                                ru.andvl.chatter.shared.models.codeagent.ProposedChange(
+                                    changeId = change.changeId,
+                                    filePath = change.filePath,
+                                    changeType = change.changeType.name,
+                                    description = change.description,
+                                    startLine = change.startLine,
+                                    endLine = change.endLine,
+                                    newContent = change.newContent,
+                                    oldContent = change.oldContent,
+                                    dependsOn = change.dependsOn,
+                                    validationNotes = change.validationNotes
+                                )
+                            },
+                            rationale = plan.rationale,
+                            estimatedComplexity = plan.estimatedComplexity.name,
+                            dependenciesSorted = plan.dependenciesSorted
+                        )
+                    },
+                    validationPassed = result.validationPassed,
+                    breakingChangesDetected = result.breakingChangesDetected,
+                    errorMessage = result.errorMessage,
+                    totalFilesAffected = result.totalFilesAffected,
+                    totalChanges = result.totalChanges,
+                    complexity = result.complexity.name,
+                    model = model.id
+                )
+            } catch (e: IllegalArgumentException) {
+                logger.error(e) { "Code modification validation failed" }
+                ru.andvl.chatter.shared.models.codeagent.CodeModificationResponse(
+                    success = false,
+                    modificationPlan = null,
+                    validationPassed = false,
+                    breakingChangesDetected = false,
+                    errorMessage = "Validation error: ${e.message}",
+                    totalFilesAffected = 0,
+                    totalChanges = 0,
+                    complexity = "SIMPLE",
+                    model = model.id
+                )
+            } catch (e: Exception) {
+                logger.error(e) { "Code modification failed with exception" }
+                ru.andvl.chatter.shared.models.codeagent.CodeModificationResponse(
+                    success = false,
+                    modificationPlan = null,
+                    validationPassed = false,
+                    breakingChangesDetected = false,
+                    errorMessage = "Code modification failed: ${e.message}",
+                    totalFilesAffected = 0,
+                    totalChanges = 0,
+                    complexity = "SIMPLE",
+                    model = model.id
+                )
             }
         }
     }
