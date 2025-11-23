@@ -156,11 +156,26 @@ private fun AIAgentSubgraphBuilderBase<ValidationCheckResult, DockerValidationRe
         val validationDir = setupValidationEnvironment(sessionPath, proposedChanges)
         storage.set(validationDirectoryKey, validationDir)
 
-        // Build analysis prompt
+        // Get list of local Docker images
+        val dockerToolSet = DockerToolSet()
+        val localImagesResult = dockerToolSet.listLocalImages()
+        val localImages = if (localImagesResult.success) {
+            localImagesResult.images
+        } else {
+            logger.warn("Could not list local Docker images: ${localImagesResult.message}")
+            emptyList()
+        }
+
+        logger.info("Available local Docker images: ${localImages.size}")
+        if (localImages.isNotEmpty()) {
+            logger.debug("Local images: ${localImages.take(10).joinToString(", ")}")
+        }
+
+        // Build analysis prompt with local images info
         val projectFiles = listProjectFiles(validationDir)
         val modifiedFilesList = proposedChanges.map { "${it.changeType}: ${it.filePath}" }
 
-        val prompt = buildValidationPlanningPrompt(projectFiles, modifiedFilesList)
+        val prompt = buildValidationPlanningPrompt(projectFiles, modifiedFilesList, localImages)
 
         // Call LLM to generate strategy using structured output
         val structuredResponse = llm.writeSession {
@@ -663,8 +678,15 @@ private fun listProjectFiles(directory: String): List<String> {
  */
 private fun buildValidationPlanningPrompt(
     projectFiles: List<String>,
-    modifiedFiles: List<String>
+    modifiedFiles: List<String>,
+    localImages: List<String>
 ): String {
+    val localImagesInfo = if (localImages.isNotEmpty()) {
+        "\n**Available Local Docker Images** (can use without network):\n${localImages.joinToString("\n")}"
+    } else {
+        ""
+    }
+
     return """
 You are a Docker validation expert. Analyze this project and create a validation strategy.
 
@@ -673,6 +695,7 @@ ${projectFiles.joinToString("\n")}
 
 **Modified Files:**
 ${modifiedFiles.joinToString("\n")}
+$localImagesInfo
 
 **Your Task:**
 1. Analyze the project type (Kotlin/Gradle, Java/Maven, Node/npm, Python, etc.)
@@ -681,9 +704,17 @@ ${modifiedFiles.joinToString("\n")}
 4. Specify build commands to run (compile, build)
 5. Specify test commands to run (unit tests, integration tests)
 
+**IMPORTANT - Network Considerations:**
+- If local images are available, PREFER using them to avoid network issues
+- For Gradle projects: gradle:8-jdk17, gradle:7-jdk11, gradle:jdk17-alpine
+- For Maven projects: maven:3-openjdk-17, maven:3-openjdk-11
+- For Node: node:18-alpine, node:16-alpine, node:latest
+- For Python: python:3.9-slim, python:3.10-slim, python:latest
+- If no suitable local image exists, choose a common base image
+
 **Output Format (JSON only, no markdown):**
 {
-  "approach_description": "Description of your validation approach",
+  "approach_description": "Description of your validation approach, mention if using local image",
   "project_type_analysis": "Detailed analysis of project type and structure",
   "dockerfile_content": "Complete Dockerfile content as a string with \n for newlines",
   "build_commands": ["command1", "command2"],
@@ -697,6 +728,7 @@ ${modifiedFiles.joinToString("\n")}
 - Include all necessary dependencies and build tools
 - Keep commands simple and robust
 - If tests are not applicable, use empty array for test_commands
+- PREFER local images when available to avoid network timeouts
 """.trim()
 }
 
@@ -722,6 +754,33 @@ ${result.stderr.joinToString("\n")}
         """.trim()
     }
 
+    // Detect network errors
+    val hasNetworkError = executionResults.any { result ->
+        result.stderr.any { line ->
+            line.contains("TLS handshake timeout") ||
+            line.contains("net/http: TLS") ||
+            line.contains("connection timeout") ||
+            line.contains("registry-1.docker.io")
+        }
+    }
+
+    val networkErrorGuidance = if (hasNetworkError) {
+        """
+
+**CRITICAL: Network Error Detected**
+Docker cannot reach registry-1.docker.io (Docker Hub). This is a network/firewall issue.
+
+**DO NOT RETRY if the error is:**
+- TLS handshake timeout
+- Connection timeout to registry
+- Cannot pull base image
+
+**Instead, mark as FAILED with error_diagnosis explaining the network issue.**
+"""
+    } else {
+        ""
+    }
+
     return """
 You are a Docker validation expert. Analyze these validation results and decide the next step.
 
@@ -733,6 +792,7 @@ $resultsFormatted
 
 **Current Retry Count:** $retryCount
 **Max Retries:** $maxRetries
+$networkErrorGuidance
 
 **Your Task:**
 1. Analyze the build and test results
@@ -763,6 +823,7 @@ $resultsFormatted
 - If all commands succeeded: status = SUCCESS, should_retry = false
 - If errors can be fixed and retries available: status = RETRY_NEEDED, should_retry = true, provide fix_suggestions
 - If no retries left or errors unfixable: status = FAILED, should_retry = false
+- **If network error (TLS timeout to registry): status = FAILED, should_retry = false, explain network issue**
 - Return ONLY valid JSON, no markdown code blocks
 """.trim()
 }
