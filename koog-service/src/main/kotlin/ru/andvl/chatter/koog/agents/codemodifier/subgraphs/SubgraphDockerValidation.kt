@@ -113,6 +113,16 @@ private fun AIAgentSubgraphBuilderBase<ValidationCheckResult, DockerValidationRe
     node<ValidationCheckResult, Boolean>("check-docker-available") { _ ->
         logger.info("Checking Docker availability")
 
+        // Check if Docker validation should be forcefully skipped
+        val forceSkip = storage.get(forceSkipDockerKey) ?: true
+        if (forceSkip) {
+            logger.info("Docker validation skipped due to forceSkipDocker flag")
+            storage.set(dockerAvailableKey, false)
+            storage.set(dockerRetryCountKey, 0)
+            return@node false
+        }
+
+        // Check actual Docker availability
         val dockerToolSet = DockerToolSet()
         val result = dockerToolSet.checkDockerAvailability()
 

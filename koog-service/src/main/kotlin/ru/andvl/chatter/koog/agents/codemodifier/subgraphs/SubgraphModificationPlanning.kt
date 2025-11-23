@@ -105,20 +105,38 @@ private fun AIAgentSubgraphBuilderBase<CodeAnalysisResult, PlanningResult>.nodeG
  * Node: Assign change IDs
  *
  * Assigns unique UUIDs to each change for tracking.
+ * Also converts index-based dependencies to ID-based dependencies.
  */
 private fun AIAgentSubgraphBuilderBase<CodeAnalysisResult, PlanningResult>.nodeAssignChangeIds() =
     node<ModificationPlan, ModificationPlan>("assign-change-ids") { plan ->
         logger.info("Assigning change IDs")
 
+        // First pass: assign UUIDs to all changes
         val changesWithIds = plan.changes.map { change ->
             change.copy(changeId = UUID.randomUUID().toString())
         }
 
-        val updatedPlan = plan.copy(changes = changesWithIds)
-        storage.set(modificationPlanKey, updatedPlan)
-        storage.set(proposedChangesKey, changesWithIds)
+        // Create index -> ID mapping for converting depends_on
+        val indexToId = changesWithIds.mapIndexed { index, change -> index.toString() to change.changeId }.toMap()
 
-        logger.info("Assigned IDs to ${changesWithIds.size} changes")
+        // Second pass: convert index-based dependencies to ID-based dependencies
+        val changesWithConvertedDeps = changesWithIds.map { change ->
+            if (change.dependsOn.isNotEmpty()) {
+                val convertedDeps = change.dependsOn.mapNotNull { dep ->
+                    // Try to convert index to ID, or keep as-is if already an ID
+                    indexToId[dep] ?: dep.takeIf { it.isNotBlank() }
+                }
+                change.copy(dependsOn = convertedDeps)
+            } else {
+                change
+            }
+        }
+
+        val updatedPlan = plan.copy(changes = changesWithConvertedDeps)
+        storage.set(modificationPlanKey, updatedPlan)
+        storage.set(proposedChangesKey, changesWithConvertedDeps)
+
+        logger.info("Assigned IDs to ${changesWithConvertedDeps.size} changes and converted dependencies")
 
         updatedPlan
     }

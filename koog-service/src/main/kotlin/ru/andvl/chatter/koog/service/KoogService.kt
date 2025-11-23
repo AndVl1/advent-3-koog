@@ -44,6 +44,7 @@ import ru.andvl.chatter.koog.agents.memory.githubMemoryProvider
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentPrompt
 import ru.andvl.chatter.koog.agents.structured.getStructuredAgentStrategy
 import ru.andvl.chatter.koog.agents.utils.createFixingModel
+import ru.andvl.chatter.koog.config.KoogModelProvider
 import ru.andvl.chatter.koog.embeddings.model.EmbeddingConfig
 import ru.andvl.chatter.koog.mcp.McpProvider
 import ru.andvl.chatter.koog.model.codemod.CodeModificationRequest
@@ -74,6 +75,16 @@ class KoogService {
         private val dotenv: Dotenv = Dotenv.configure()
             .ignoreIfMissing()
             .load()
+
+        /**
+         * Default model for main tasks (can be overridden via KOOG_DEFAULT_MODEL env var)
+         */
+        private val DEFAULT_MODEL_ID = dotenv["KOOG_DEFAULT_MODEL"] ?: "qwen/qwen3-coder"
+
+        /**
+         * Model used for error fixing/parsing (can be overridden via KOOG_FIXING_MODEL env var)
+         */
+        private val FIXING_MODEL_ID = dotenv["KOOG_FIXING_MODEL"] ?: "z-ai/glm-4.5-air"
     }
 
     private fun buildGithubSystemPrompt(): String {
@@ -157,20 +168,9 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         promptExecutor: PromptExecutor,
         provider: Provider? = null,
     ): ChatResponse {
-        val model: LLModel = when (provider) {
-            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> LLModel(
-                provider = LLMProvider.OpenRouter,
-                id = "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
-                capabilities = listOf(
-                    LLMCapability.Temperature,
-                    LLMCapability.Completion,
-                ),
-                contextLength = 16_000, //
-            )
+        val modelProvider = KoogModelProvider.fromProvider(provider)
+        val model = modelProvider.createSimpleLLModel(DEFAULT_MODEL_ID)
 
-            else -> OpenRouterModels.Gemini2_5Flash
-        }
         return withContext(Dispatchers.IO) {
             val systemPrompt = buildSystemPrompt(request)
 
@@ -265,11 +265,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         promptExecutor: PromptExecutor,
         provider: Provider? = null,
     ): ConversationResponse {
-        val model: LLModel = when (provider) {
-            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> OpenRouterModels.Gemini2_5Flash
-            else -> OpenRouterModels.Gemini2_5Flash
-        }
+        val modelProvider = KoogModelProvider.fromProvider(provider)
+        val model = modelProvider.createLLModel(DEFAULT_MODEL_ID)
 
         return withContext(Dispatchers.IO) {
             // Let the strategy nodes build their own prompts with personalization
@@ -348,36 +345,9 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         promptExecutor: PromptExecutor,
         provider: Provider? = null,
     ): CodeModificationResponse {
-        val model: LLModel = when (provider) {
-            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> LLModel(
-                provider = LLMProvider.OpenRouter,
-                id = "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
-                capabilities = listOf(
-                    LLMCapability.Temperature,
-                    LLMCapability.Completion,
-                    LLMCapability.Tools,
-                    LLMCapability.OpenAIEndpoint.Completions,
-                    LLMCapability.MultipleChoices,
-                ),
-                contextLength = 200_000, //
-            )
-            else -> OpenRouterModels.Gemini2_5Flash
-        }
-
-        val fixingModel = when (provider) {
-            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> LLModel(
-                provider = LLMProvider.OpenRouter,
-                id = "z-ai/glm-4.5-air", // "qwen/qwen3-coder", //"openai/gpt-5-nano", // "qwen/qwen3-coder"
-                capabilities = listOf(
-                    LLMCapability.Temperature,
-                    LLMCapability.Completion,
-                ),
-                contextLength = 16_000, //
-            )
-            else -> OpenRouterModels.GPT5Nano
-        }
+        val modelProvider = KoogModelProvider.fromProvider(provider)
+        val model = modelProvider.createLLModel(DEFAULT_MODEL_ID)
+        val fixingModel = modelProvider.createSimpleLLModel(FIXING_MODEL_ID)
 
         return withContext(Dispatchers.IO) {
             val emptyPrompt = prompt(
@@ -1062,11 +1032,8 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
         promptExecutor: PromptExecutor,
         provider: Provider? = null,
     ): ru.andvl.chatter.shared.models.codeagent.CodeModificationResponse {
-        val model: LLModel = when (provider) {
-            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
-            Provider.OPENROUTER -> OpenRouterModels.Gemini2_5Flash
-            else -> OpenRouterModels.Gemini2_5Flash
-        }
+        val modelProvider = KoogModelProvider.fromProvider(provider)
+        val model = modelProvider.createLLModel(DEFAULT_MODEL_ID)
 
         return withContext(Dispatchers.IO) {
             logger.info { "Starting code modification for session: ${request.sessionId}" }

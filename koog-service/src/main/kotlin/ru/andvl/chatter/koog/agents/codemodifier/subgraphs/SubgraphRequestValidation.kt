@@ -47,6 +47,7 @@ private fun AIAgentSubgraphBuilderBase<CodeModificationRequest, ValidationResult
         storage.set(instructionsKey, request.instructions)
         storage.set(enableValidationKey, request.enableValidation)
         storage.set(maxChangesKey, request.maxChanges)
+        storage.set(forceSkipDockerKey, request.forceSkipDocker)
 
         // SessionId is the repository path directly
         val repositoryPath = request.sessionId

@@ -1,5 +1,6 @@
 package ru.andvl.chatter.koog.model.codemodifier
 
+import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -20,7 +21,9 @@ data class CodeModificationRequest(
     @SerialName("enable_validation")
     val enableValidation: Boolean = true,
     @SerialName("max_changes")
-    val maxChanges: Int = 50
+    val maxChanges: Int = 50,
+    @SerialName("force_skip_docker")
+    val forceSkipDocker: Boolean = true
 )
 
 /**
@@ -54,14 +57,19 @@ data class CodeModificationResult(
 /**
  * Modification plan with ordered changes
  */
+@LLMDescription("Complete modification plan with all proposed changes and analysis")
 @Serializable
 data class ModificationPlan(
+    @property:LLMDescription("List of proposed code changes ordered by dependencies. Field name: changes")
     @SerialName("changes")
     val changes: List<ProposedChange>,
+    @property:LLMDescription("Detailed explanation of why these changes are needed and how they achieve the goal. Field name: rationale")
     @SerialName("rationale")
     val rationale: String,
+    @property:LLMDescription("Overall complexity level of this modification plan (SIMPLE, MODERATE, COMPLEX, CRITICAL). Field name: estimated_complexity")
     @SerialName("estimated_complexity")
     val estimatedComplexity: Complexity,
+    @property:LLMDescription("Whether changes are sorted by dependency order to avoid conflicts. Field name: dependencies_sorted")
     @SerialName("dependencies_sorted")
     val dependenciesSorted: Boolean = false
 )
@@ -69,26 +77,37 @@ data class ModificationPlan(
 /**
  * A single proposed change to a file
  */
+@LLMDescription("A single proposed code change to be applied to a file")
 @Serializable
 data class ProposedChange(
+    @property:LLMDescription("Unique identifier for this change. Auto-generated if not provided. Field name: change_id")
     @SerialName("change_id")
-    val changeId: String,
+    val changeId: String = "",
+    @property:LLMDescription("Full path to the file to be modified. Field name: file_path")
     @SerialName("file_path")
     val filePath: String,
+    @property:LLMDescription("Type of change: CREATE, MODIFY, DELETE, RENAME, or REFACTOR. Field name: change_type")
     @SerialName("change_type")
     val changeType: ChangeType,
+    @property:LLMDescription("Clear description of what this change does and why. Field name: description")
     @SerialName("description")
     val description: String,
+    @property:LLMDescription("Starting line number for modification (1-based). Optional for CREATE. Field name: start_line")
     @SerialName("start_line")
     val startLine: Int? = null,
+    @property:LLMDescription("Ending line number for modification (1-based). Optional for CREATE. Field name: end_line")
     @SerialName("end_line")
     val endLine: Int? = null,
+    @property:LLMDescription("The new code content to insert or replace with. Field name: new_content")
     @SerialName("new_content")
     val newContent: String,
+    @property:LLMDescription("Original code content being replaced. Optional. Field name: old_content")
     @SerialName("old_content")
     val oldContent: String? = null,
+    @property:LLMDescription("List of change_ids that must be applied before this one. Field name: depends_on")
     @SerialName("depends_on")
     val dependsOn: List<String> = emptyList(),
+    @property:LLMDescription("Additional notes about validation or potential issues. Optional. Field name: validation_notes")
     @SerialName("validation_notes")
     val validationNotes: String? = null
 )
@@ -96,6 +115,7 @@ data class ProposedChange(
 /**
  * Type of code modification
  */
+@LLMDescription("Type of code modification operation: CREATE (new file), MODIFY (edit existing), DELETE (remove), RENAME (move/rename), REFACTOR (restructure)")
 @Serializable
 enum class ChangeType {
     @SerialName("CREATE")
@@ -113,6 +133,7 @@ enum class ChangeType {
 /**
  * Complexity estimate for modifications
  */
+@LLMDescription("Complexity level: SIMPLE (trivial changes), MODERATE (standard refactoring), COMPLEX (significant restructuring), CRITICAL (risky/breaking changes)")
 @Serializable
 enum class Complexity {
     @SerialName("SIMPLE")
@@ -288,18 +309,25 @@ internal enum class ProjectType(
 /**
  * LLM-generated validation strategy
  */
+@LLMDescription("LLM-generated strategy for validating code changes using Docker")
 @Serializable
 internal data class ValidationStrategy(
+    @property:LLMDescription("Detailed description of the validation approach and methodology. Field name: approach_description")
     @SerialName("approach_description")
     val approachDescription: String,
+    @property:LLMDescription("Analysis of the project type and technologies detected. Field name: project_type_analysis")
     @SerialName("project_type_analysis")
     val projectTypeAnalysis: String,
+    @property:LLMDescription("Complete Dockerfile content to be used for validation. Field name: dockerfile_content")
     @SerialName("dockerfile_content")
     val dockerfileContent: String,
+    @property:LLMDescription("List of shell commands to build the project. Field name: build_commands")
     @SerialName("build_commands")
     val buildCommands: List<String>,
+    @property:LLMDescription("List of shell commands to run tests. Field name: test_commands")
     @SerialName("test_commands")
     val testCommands: List<String>,
+    @property:LLMDescription("Expected outcomes of successful build and test execution. Field name: expected_outcomes")
     @SerialName("expected_outcomes")
     val expectedOutcomes: String
 )
@@ -326,20 +354,28 @@ internal data class CommandExecutionResult(
 /**
  * LLM analysis of validation results
  */
+@LLMDescription("LLM analysis of Docker validation results with diagnostics and fix suggestions")
 @Serializable
 internal data class ValidationAnalysis(
+    @property:LLMDescription("Overall validation status: SUCCESS, RETRY_NEEDED, or FAILED. Field name: overall_status")
     @SerialName("overall_status")
     val overallStatus: ValidationStatus,
+    @property:LLMDescription("Detailed analysis of the build process and its output. Field name: build_analysis")
     @SerialName("build_analysis")
     val buildAnalysis: String,
+    @property:LLMDescription("Detailed analysis of test execution and results. Optional. Field name: test_analysis")
     @SerialName("test_analysis")
     val testAnalysis: String?,
+    @property:LLMDescription("Diagnosis of errors encountered during validation. Optional. Field name: error_diagnosis")
     @SerialName("error_diagnosis")
     val errorDiagnosis: String?,
+    @property:LLMDescription("List of suggested fixes to resolve validation failures. Field name: fix_suggestions")
     @SerialName("fix_suggestions")
     val fixSuggestions: List<FixSuggestion>,
+    @property:LLMDescription("Whether validation should be retried with fixes applied. Field name: should_retry")
     @SerialName("should_retry")
     val shouldRetry: Boolean,
+    @property:LLMDescription("Reason why retry is recommended or not. Optional. Field name: retry_reason")
     @SerialName("retry_reason")
     val retryReason: String?
 )
@@ -347,6 +383,7 @@ internal data class ValidationAnalysis(
 /**
  * Status of validation attempt
  */
+@LLMDescription("Validation status: SUCCESS (passed all checks), RETRY_NEEDED (fixable failures), FAILED (unrecoverable errors)")
 @Serializable
 enum class ValidationStatus {
     @SerialName("SUCCESS")
@@ -360,16 +397,22 @@ enum class ValidationStatus {
 /**
  * LLM-suggested fix for validation failure
  */
+@LLMDescription("LLM-suggested fix to resolve a validation failure")
 @Serializable
 internal data class FixSuggestion(
+    @property:LLMDescription("Clear description of the fix and what it addresses. Field name: description")
     @SerialName("description")
     val description: String,
+    @property:LLMDescription("Type of fix: DOCKERFILE_MODIFICATION, BUILD_COMMAND_CHANGE, TEST_COMMAND_CHANGE, DEPENDENCY_FIX, or CONFIGURATION_CHANGE. Field name: fix_type")
     @SerialName("fix_type")
     val fixType: FixType,
+    @property:LLMDescription("Updated Dockerfile content if fix requires Dockerfile changes. Optional. Field name: updated_dockerfile")
     @SerialName("updated_dockerfile")
     val updatedDockerfile: String?,
+    @property:LLMDescription("Updated build commands if fix requires command changes. Optional. Field name: updated_build_commands")
     @SerialName("updated_build_commands")
     val updatedBuildCommands: List<String>?,
+    @property:LLMDescription("Updated test commands if fix requires test command changes. Optional. Field name: updated_test_commands")
     @SerialName("updated_test_commands")
     val updatedTestCommands: List<String>?
 )
@@ -377,6 +420,7 @@ internal data class FixSuggestion(
 /**
  * Type of fix to apply
  */
+@LLMDescription("Type of fix: DOCKERFILE_MODIFICATION (change Dockerfile), BUILD_COMMAND_CHANGE (modify build commands), TEST_COMMAND_CHANGE (modify test commands), DEPENDENCY_FIX (fix dependencies), CONFIGURATION_CHANGE (change configuration)")
 @Serializable
 enum class FixType {
     @SerialName("DOCKERFILE_MODIFICATION")
@@ -394,18 +438,25 @@ enum class FixType {
 /**
  * Final validation report from LLM
  */
+@LLMDescription("Final validation report summarizing all validation attempts and outcomes")
 @Serializable
 internal data class FinalValidationReport(
+    @property:LLMDescription("Executive summary of the validation process and results. Field name: summary")
     @SerialName("summary")
     val summary: String,
+    @property:LLMDescription("Status of the build process (e.g., 'SUCCESS', 'FAILED', 'PARTIAL'). Field name: build_status")
     @SerialName("build_status")
     val buildStatus: String,
+    @property:LLMDescription("Status of test execution if tests were run. Optional. Field name: test_status")
     @SerialName("test_status")
     val testStatus: String?,
+    @property:LLMDescription("List of recommendations for improving code quality or fixing issues. Field name: recommendations")
     @SerialName("recommendations")
     val recommendations: List<String>,
+    @property:LLMDescription("Total number of validation attempts made. Field name: total_attempts")
     @SerialName("total_attempts")
     val totalAttempts: Int,
+    @property:LLMDescription("Final verdict on whether changes are safe to apply. Field name: verdict")
     @SerialName("verdict")
     val verdict: String
 )

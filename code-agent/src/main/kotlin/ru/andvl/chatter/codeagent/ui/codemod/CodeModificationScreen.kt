@@ -154,7 +154,7 @@ private fun CodeModificationContent(
         }
 
         // Right panel - Change Details
-        if (state.selectedChangeForDetails != null) {
+        state.selectedChange?.let { change ->
             Surface(
                 modifier = Modifier
                     .weight(1f)
@@ -163,7 +163,7 @@ private fun CodeModificationContent(
                 tonalElevation = 1.dp
             ) {
                 ChangeDetailsPanel(
-                    change = state.selectedChange!!,
+                    change = change,
                     diffViewMode = state.diffViewMode,
                     onClose = { onAction(CodeModificationAction.ViewChangeDetails(null)) },
                     onSwitchMode = { onAction(CodeModificationAction.SwitchDiffViewMode(it)) }

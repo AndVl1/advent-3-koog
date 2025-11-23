@@ -53,3 +53,4 @@ internal val executionResultsKey = createStorageKey<List<CommandExecutionResult>
 internal val validationAnalysisKey = createStorageKey<ValidationAnalysis>("validation-analysis")
 internal val dockerRetryCountKey = createStorageKey<Int>("docker-retry-count")
 internal val finalReportKey = createStorageKey<FinalValidationReport>("final-report")
+internal val forceSkipDockerKey = createStorageKey<Boolean>("force-skip-docker")
