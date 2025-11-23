@@ -169,10 +169,123 @@ data class TokenUsage(
 )
 
 /**
- * Request for code modification with checklist
+ * Request for code modification
  */
 @Serializable
 data class CodeModificationRequest(
+    @SerialName("session_id")
+    val sessionId: String,
+
+    @SerialName("instructions")
+    val instructions: String,
+
+    @SerialName("file_scope")
+    val fileScope: List<String>? = null,
+
+    @SerialName("enable_validation")
+    val enableValidation: Boolean = true,
+
+    @SerialName("max_changes")
+    val maxChanges: Int = 50
+)
+
+/**
+ * Response for code modification
+ */
+@Serializable
+data class CodeModificationResponse(
+    @SerialName("success")
+    val success: Boolean,
+
+    @SerialName("modification_plan")
+    val modificationPlan: ModificationPlan? = null,
+
+    @SerialName("validation_passed")
+    val validationPassed: Boolean = false,
+
+    @SerialName("breaking_changes_detected")
+    val breakingChangesDetected: Boolean = false,
+
+    @SerialName("error_message")
+    val errorMessage: String? = null,
+
+    @SerialName("total_files_affected")
+    val totalFilesAffected: Int = 0,
+
+    @SerialName("total_changes")
+    val totalChanges: Int = 0,
+
+    @SerialName("complexity")
+    val complexity: String = "SIMPLE",
+
+    @SerialName("model")
+    val model: String = "",
+
+    @SerialName("usage")
+    val usage: TokenUsage? = null
+)
+
+/**
+ * Modification plan with ordered changes
+ */
+@Serializable
+data class ModificationPlan(
+    @SerialName("changes")
+    val changes: List<ProposedChange>,
+
+    @SerialName("rationale")
+    val rationale: String,
+
+    @SerialName("estimated_complexity")
+    val estimatedComplexity: String,
+
+    @SerialName("dependencies_sorted")
+    val dependenciesSorted: Boolean = false
+)
+
+/**
+ * A single proposed change to a file
+ */
+@Serializable
+data class ProposedChange(
+    @SerialName("change_id")
+    val changeId: String,
+
+    @SerialName("file_path")
+    val filePath: String,
+
+    @SerialName("change_type")
+    val changeType: String,
+
+    @SerialName("description")
+    val description: String,
+
+    @SerialName("start_line")
+    val startLine: Int? = null,
+
+    @SerialName("end_line")
+    val endLine: Int? = null,
+
+    @SerialName("new_content")
+    val newContent: String,
+
+    @SerialName("old_content")
+    val oldContent: String? = null,
+
+    @SerialName("depends_on")
+    val dependsOn: List<String> = emptyList(),
+
+    @SerialName("validation_notes")
+    val validationNotes: String? = null
+)
+
+/**
+ * Request for code modification with checklist (legacy, for backward compatibility)
+ * @deprecated Use CodeModifierRequest instead
+ */
+@Serializable
+@Deprecated("Use CodeModifierRequest for the new Code Modifier Agent")
+data class CodeModificationRequestLegacy(
     @SerialName("session_id")
     val sessionId: String,
 
@@ -187,10 +300,12 @@ data class CodeModificationRequest(
 )
 
 /**
- * Response for code modification
+ * Response for code modification (legacy, for backward compatibility)
+ * @deprecated Use CodeModifierResponse instead
  */
 @Serializable
-data class CodeModificationResponse(
+@Deprecated("Use CodeModifierResponse for the new Code Modifier Agent")
+data class CodeModificationResponseLegacy(
     @SerialName("success")
     val success: Boolean,
 

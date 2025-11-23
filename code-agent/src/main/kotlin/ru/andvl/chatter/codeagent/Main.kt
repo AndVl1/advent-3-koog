@@ -14,8 +14,11 @@ import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.ui.unit.dp
 import ru.andvl.chatter.codeagent.ui.RepositoryAnalysisScreen
 import ru.andvl.chatter.codeagent.ui.codeqa.CodeQaScreen
+import ru.andvl.chatter.codeagent.ui.codemod.CodeModificationScreen
 import ru.andvl.chatter.codeagent.viewmodel.CodeQaAction
 import ru.andvl.chatter.codeagent.viewmodel.CodeQaViewModel
+import ru.andvl.chatter.codeagent.viewmodel.CodeModificationAction
+import ru.andvl.chatter.codeagent.viewmodel.CodeModificationViewModel
 import ru.andvl.chatter.codeagent.viewmodel.RepositoryAnalysisViewModel
 
 /**
@@ -24,6 +27,7 @@ import ru.andvl.chatter.codeagent.viewmodel.RepositoryAnalysisViewModel
  * This application provides:
  * - Repository Analysis: AI-powered analysis of GitHub repositories
  * - Code QA: Interactive Q&A about analyzed code
+ * - Code Modifications: AI-assisted code modification with diff viewer
  *
  * It follows Clean Architecture and MVVM principles with Jetpack Compose for Desktop.
  */
@@ -47,6 +51,7 @@ private fun CodeAgentApp() {
     // Create ViewModels and ensure proper cleanup
     val repositoryAnalysisViewModel = remember { RepositoryAnalysisViewModel() }
     val codeQaViewModel = remember { CodeQaViewModel() }
+    val codeModificationViewModel = remember { CodeModificationViewModel() }
 
     // Track current tab
     var selectedTabIndex by remember { mutableStateOf(0) }
@@ -54,11 +59,17 @@ private fun CodeAgentApp() {
     // Observe repository analysis state for session initialization
     val repoState by repositoryAnalysisViewModel.state.collectAsState()
 
-    // When analysis completes, initialize Code QA session
+    // When analysis completes, initialize Code QA and Code Modification sessions
     LaunchedEffect(repoState.analysisResult) {
         repoState.analysisResult?.let { result ->
             codeQaViewModel.dispatch(
                 CodeQaAction.InitializeSession(
+                    sessionId = result.repositoryPath,
+                    repositoryName = result.repositoryName
+                )
+            )
+            codeModificationViewModel.dispatch(
+                CodeModificationAction.InitializeSession(
                     sessionId = result.repositoryPath,
                     repositoryName = result.repositoryName
                 )
@@ -71,6 +82,7 @@ private fun CodeAgentApp() {
         onDispose {
             repositoryAnalysisViewModel.onCleared()
             codeQaViewModel.onCleared()
+            codeModificationViewModel.onCleared()
         }
     }
 
@@ -87,12 +99,18 @@ private fun CodeAgentApp() {
                 onClick = { selectedTabIndex = 1 },
                 text = { Text("Code QA") }
             )
+            Tab(
+                selected = selectedTabIndex == 2,
+                onClick = { selectedTabIndex = 2 },
+                text = { Text("Code Modifications") }
+            )
         }
 
         // Display selected screen
         when (selectedTabIndex) {
             0 -> RepositoryAnalysisScreen(viewModel = repositoryAnalysisViewModel)
             1 -> CodeQaScreen(viewModel = codeQaViewModel)
+            2 -> CodeModificationScreen(viewModel = codeModificationViewModel)
         }
     }
 }

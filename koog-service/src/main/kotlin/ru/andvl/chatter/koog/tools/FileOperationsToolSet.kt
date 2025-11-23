@@ -12,7 +12,9 @@ import java.nio.file.Paths
 import kotlin.io.path.isDirectory
 
 @LLMDescription("Tools for file system operations: reading, searching, modifying files in a repository")
-internal class FileOperationsToolSet : ToolSet {
+internal class FileOperationsToolSet(
+    private val allowedBasePath: String? = null
+) : ToolSet {
     private val logger = LoggerFactory.getLogger(FileOperationsToolSet::class.java)
     private val workDir = File("/tmp/code-modifications")
     private val repositoryDir = File("/tmp/repository-analyzer")
@@ -664,8 +666,18 @@ internal class FileOperationsToolSet : ToolSet {
         val canonicalPath = file.canonicalPath
         val workDirPath = workDir.canonicalPath
         val repositoryDirPath = repositoryDir.canonicalPath
-        // Allow access to both code-modifications (for writing) and repository-analyzer (for reading)
-        return canonicalPath.startsWith(workDirPath) || canonicalPath.startsWith(repositoryDirPath)
+
+        // Check hardcoded paths
+        val isInHardcodedPaths = canonicalPath.startsWith(workDirPath) ||
+                                 canonicalPath.startsWith(repositoryDirPath)
+
+        // Check custom allowed path if provided
+        val isInCustomPath = allowedBasePath?.let { basePath ->
+            val baseDir = File(basePath)
+            canonicalPath.startsWith(baseDir.canonicalPath)
+        } ?: false
+
+        return isInHardcodedPaths || isInCustomPath
     }
 }
 

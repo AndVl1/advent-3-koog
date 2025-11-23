@@ -1043,27 +1043,149 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
     }
 
     /**
-     * Modify code with automatic checklist generation and verification
+     * Modify code using the Code Modifier Agent
      *
      * This method:
-     * - Analyzes modification request
-     * - Generates checklist of tasks
-     * - Applies modifications step-by-step
-     * - Verifies each step
-     * - Creates branch and commits changes
+     * - Validates session and file scope
+     * - Analyzes code context
+     * - Generates detailed modification plan
+     * - Validates syntax and detects breaking changes
+     * - Returns proposed changes (does NOT apply them automatically)
      *
      * @param request Code modification request
      * @param promptExecutor Prompt executor for LLM calls
      * @param provider LLM provider to use
-     * @return CodeModificationResponse with checklist and results
+     * @return CodeModificationResponse with proposed changes
      */
-    suspend fun modifyCodeWithChecklist(
+    suspend fun modifyCode(
         request: ru.andvl.chatter.shared.models.codeagent.CodeModificationRequest,
         promptExecutor: PromptExecutor,
         provider: Provider? = null,
     ): ru.andvl.chatter.shared.models.codeagent.CodeModificationResponse {
-        // TODO: Implement Code Modifier Agent (Phase 5)
-        throw NotImplementedError("Code modification with checklist will be implemented in Phase 5")
+        val model: LLModel = when (provider) {
+            Provider.GOOGLE -> GoogleModels.Gemini2_5Flash
+            Provider.OPENROUTER -> OpenRouterModels.Gemini2_5Flash
+            else -> OpenRouterModels.Gemini2_5Flash
+        }
+
+        return withContext(Dispatchers.IO) {
+            logger.info { "Starting code modification for session: ${request.sessionId}" }
+            logger.info { "  Instructions: ${request.instructions.take(100)}..." }
+            logger.info { "  File scope: ${request.fileScope?.size ?: 0} files" }
+
+            val emptyPrompt = prompt(
+                Prompt(emptyList(), "code-modifier-agent", params = LLMParams())
+            ) {}
+
+            try {
+                val strategy = ru.andvl.chatter.koog.agents.codemodifier.getCodeModifierStrategy(model)
+
+                val agentConfig = AIAgentConfig(
+                    prompt = emptyPrompt,
+                    model = model,
+                    maxAgentIterations = 100,
+                )
+
+                val toolRegistry = ToolRegistry {
+                    tools(FileOperationsToolSet())
+                    tools(RagToolSet())
+                }
+
+                val agent = AIAgent(
+                    promptExecutor = promptExecutor,
+                    toolRegistry = toolRegistry,
+                    strategy = strategy,
+                    agentConfig = agentConfig,
+                    id = "code-modifier-agent",
+                    installFeatures = {
+                        install(Tracing) {
+                            val outputPath = Path("./logs/koog_code_modifier_trace.log")
+                            addMessageProcessor(TraceFeatureMessageLogWriter(logger))
+                            addMessageProcessor(TraceFeatureMessageFileWriter(
+                                outputPath,
+                                { path: Path -> SystemFileSystem.sink(path).buffered() }
+                            ))
+                        }
+                    }
+                )
+
+                // Convert shared model to internal model
+                val internalRequest = ru.andvl.chatter.koog.model.codemodifier.CodeModificationRequest(
+                    sessionId = request.sessionId,
+                    instructions = request.instructions,
+                    fileScope = request.fileScope,
+                    enableValidation = request.enableValidation,
+                    maxChanges = request.maxChanges
+                )
+
+                val result = agent.run(internalRequest)
+
+                logger.info { "Code modification completed: ${if (result.success) "SUCCESS" else "FAILED"}" }
+                logger.info { "  Files affected: ${result.totalFilesAffected}" }
+                logger.info { "  Total changes: ${result.totalChanges}" }
+                logger.info { "  Complexity: ${result.complexity}" }
+                logger.info { "  Breaking changes: ${result.breakingChangesDetected}" }
+
+                // Convert internal result to shared model
+                ru.andvl.chatter.shared.models.codeagent.CodeModificationResponse(
+                    success = result.success,
+                    modificationPlan = result.modificationPlan?.let { plan ->
+                        ru.andvl.chatter.shared.models.codeagent.ModificationPlan(
+                            changes = plan.changes.map { change ->
+                                ru.andvl.chatter.shared.models.codeagent.ProposedChange(
+                                    changeId = change.changeId,
+                                    filePath = change.filePath,
+                                    changeType = change.changeType.name,
+                                    description = change.description,
+                                    startLine = change.startLine,
+                                    endLine = change.endLine,
+                                    newContent = change.newContent,
+                                    oldContent = change.oldContent,
+                                    dependsOn = change.dependsOn,
+                                    validationNotes = change.validationNotes
+                                )
+                            },
+                            rationale = plan.rationale,
+                            estimatedComplexity = plan.estimatedComplexity.name,
+                            dependenciesSorted = plan.dependenciesSorted
+                        )
+                    },
+                    validationPassed = result.validationPassed,
+                    breakingChangesDetected = result.breakingChangesDetected,
+                    errorMessage = result.errorMessage,
+                    totalFilesAffected = result.totalFilesAffected,
+                    totalChanges = result.totalChanges,
+                    complexity = result.complexity.name,
+                    model = model.id
+                )
+            } catch (e: IllegalArgumentException) {
+                logger.error(e) { "Code modification validation failed" }
+                ru.andvl.chatter.shared.models.codeagent.CodeModificationResponse(
+                    success = false,
+                    modificationPlan = null,
+                    validationPassed = false,
+                    breakingChangesDetected = false,
+                    errorMessage = "Validation error: ${e.message}",
+                    totalFilesAffected = 0,
+                    totalChanges = 0,
+                    complexity = "SIMPLE",
+                    model = model.id
+                )
+            } catch (e: Exception) {
+                logger.error(e) { "Code modification failed with exception" }
+                ru.andvl.chatter.shared.models.codeagent.CodeModificationResponse(
+                    success = false,
+                    modificationPlan = null,
+                    validationPassed = false,
+                    breakingChangesDetected = false,
+                    errorMessage = "Code modification failed: ${e.message}",
+                    totalFilesAffected = 0,
+                    totalChanges = 0,
+                    complexity = "SIMPLE",
+                    model = model.id
+                )
+            }
+        }
     }
 
     /**

@@ -97,8 +97,8 @@ private fun AIAgentSubgraphBuilderBase<QuestionAnalysisResult, CodeSearchResult>
 
         val fileSearchResults = mutableListOf<CodeReferenceInternal>()
 
-        // Use FileOperationsToolSet to search for keywords
-        val fileOps = FileOperationsToolSet()
+        // Use FileOperationsToolSet to search for keywords with repository path access
+        val fileOps = FileOperationsToolSet(allowedBasePath = repositoryPath)
 
         // Search for each keyword
         keywords.take(5).forEach { keyword ->
