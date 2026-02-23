@@ -1,0 +1,10 @@
+desktop-app/src/androidMain/AndroidManifest.xml
+  94e141a 11
+desktop-app/src/commonMain/kotlin/ru/andvl/chatter/app/ui/ChatScreen.kt
+  94e141a 13,84,91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "base_commit_sha": "5efa6b3a35bed858e1a739617d3c3a3aa691c511",
+  "prompts": {}
+}
