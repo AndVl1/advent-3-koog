@@ -17,9 +17,21 @@ import ru.andvl.chatter.koog.tools.CurrentTimeToolSet
 import ru.andvl.chatter.koog.tools.DockerToolSet
 import ru.andvl.chatter.koog.tools.RagToolSet
 import java.io.File
-import kotlin.system.exitProcess
 
 object McpProvider {
+
+    /**
+     * Finds the project root by walking up from user.dir until a directory containing
+     * settings.gradle.kts is found. This works regardless of working directory (Gradle, IDEA, etc.).
+     */
+    private fun findProjectRoot(): File {
+        var dir = File(System.getProperty("user.dir"))
+        while (dir.parentFile != null) {
+            if (File(dir, "settings.gradle.kts").exists()) return dir
+            dir = dir.parentFile
+        }
+        return File(System.getProperty("user.dir"))
+    }
 
     private var googleDocsClient: Client? = null
     private val googleDocsMutex = Mutex()
@@ -106,13 +118,13 @@ object McpProvider {
 
     private suspend fun createGoogleDocsClient(): Client {
         val jarPath = "mcp/googledocs/build/libs/googledocs-0.1.0.jar"
-        val jarFile = File(jarPath)
+        val jarFile = findProjectRoot().resolve(jarPath)
         if (!jarFile.exists()) {
             println("❌ JAR файл не найден: $jarPath")
             println("Абсолютный путь: ${jarFile.absolutePath}")
             println("Текущая директория: ${File(".").absolutePath}")
-            println("💡 Запустите: ./gradlew :mcp:github:build")
-            exitProcess(1)
+            println("💡 Запустите: ./gradlew :mcp:googledocs:build")
+            throw IllegalStateException("MCP JAR not found: ${jarFile.absolutePath}. Run: ./gradlew :mcp:googledocs:build")
         }
 
         println("✅ JAR файл найден: $jarPath")
@@ -128,12 +140,12 @@ object McpProvider {
 
         // Проверяем, что процесс еще работает
         if (!process.isAlive) {
-            println("❌ Процесс сервера завершился с кодом: ${process.exitValue()}")
             val errorOutput = process.errorStream.bufferedReader().readText()
             val stdOutput = process.inputStream.bufferedReader().readText()
+            println("❌ Процесс сервера завершился с кодом: ${process.exitValue()}")
             println("Stderr: $errorOutput")
             println("Stdout: $stdOutput")
-            exitProcess(1)
+            throw IllegalStateException("GoogleDocs MCP server process exited prematurely (code ${process.exitValue()})")
         } else {
             // Читаем stderr для диагностики (неблокирующе)
             if (process.errorStream.available() > 0) {
@@ -161,9 +173,8 @@ object McpProvider {
             delay(1000)
         } catch (e: Exception) {
             println("❌ Ошибка подключения: ${e.message}")
-            e.printStackTrace()
             process.destroy()
-            exitProcess(1)
+            throw e
         }
 
         return client
@@ -173,13 +184,13 @@ object McpProvider {
         val jarPath = "mcp/github/build/libs/github-0.1.0.jar"
 
         // Проверяем существование JAR файла
-        val jarFile = File(jarPath)
+        val jarFile = findProjectRoot().resolve(jarPath)
         if (!jarFile.exists()) {
             println("❌ JAR файл не найден: $jarPath")
             println("Абсолютный путь: ${jarFile.absolutePath}")
             println("Текущая директория: ${File(".").absolutePath}")
             println("💡 Запустите: ./gradlew :mcp:github:build")
-            exitProcess(1)
+            throw IllegalStateException("MCP JAR not found: ${jarFile.absolutePath}. Run: ./gradlew :mcp:github:build")
         }
 
         println("✅ JAR файл найден: $jarPath")
@@ -195,12 +206,12 @@ object McpProvider {
 
         // Проверяем, что процесс еще работает
         if (!process.isAlive) {
-            println("❌ Процесс сервера завершился с кодом: ${process.exitValue()}")
             val errorOutput = process.errorStream.bufferedReader().readText()
             val stdOutput = process.inputStream.bufferedReader().readText()
+            println("❌ Процесс сервера завершился с кодом: ${process.exitValue()}")
             println("Stderr: $errorOutput")
             println("Stdout: $stdOutput")
-            exitProcess(1)
+            throw IllegalStateException("GitHub MCP server process exited prematurely (code ${process.exitValue()})")
         } else {
             // Читаем stderr для диагностики (неблокирующе)
             if (process.errorStream.available() > 0) {
