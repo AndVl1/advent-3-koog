@@ -1,7 +1,16 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
 rootProject.name = "chatter"
 
 dependencyResolutionManagement {
     repositories {
+        google()
         mavenCentral()
     }
 }
@@ -17,4 +26,4 @@ include(":mcp:telegraph")
 include(":mcp:googledocs")
 include(":mcp:test")
 include(":telegram-bot")
-include(":desktop-app")
+include(":composeApp")

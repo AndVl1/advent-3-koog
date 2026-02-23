@@ -40,6 +40,7 @@ out/
 
 /config.properties
 /.env
+/local.properties
 config.properties
 /server/gradle.properties
 /tools/docs/
@@ -68,3 +69,4 @@ desktop-app/logs/
 /rag/
 /voice_recordings/
 chat_history.json
+.claude/

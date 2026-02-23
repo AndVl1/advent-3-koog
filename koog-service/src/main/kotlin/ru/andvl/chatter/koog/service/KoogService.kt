@@ -66,9 +66,13 @@ import java.io.File
 /**
  * Koog service - independent service for LLM interaction with context support
  */
-class KoogService {
+class KoogService(private val logsDir: String = "./logs") {
 
     private val logger = KotlinLogging.logger(KoogService::class.java.name)
+
+    init {
+        File(logsDir).mkdirs()
+    }
 
     companion object {
         private val dotenv: Dotenv = Dotenv.configure()
@@ -195,7 +199,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     id = "structured_agent",
                     installFeatures = {
                         install(Tracing) {
-                            val outputPath = Path("./logs/koog_chat_trace.log")
+                            val outputPath = Path("$logsDir/koog_chat_trace.log")
                             addMessageProcessor(TraceFeatureMessageLogWriter(logger))
                             addMessageProcessor(TraceFeatureMessageFileWriter(
                                 outputPath,
@@ -294,7 +298,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     id = "conversation_agent",
                     installFeatures = {
                         install(Tracing) {
-                            val outputPath = Path("./logs/koog_conversation_trace.log")
+                            val outputPath = Path("$logsDir/koog_conversation_trace.log")
                             addMessageProcessor(TraceFeatureMessageLogWriter(logger))
                             addMessageProcessor(TraceFeatureMessageFileWriter(
                                 outputPath,
@@ -421,7 +425,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     id = "code-modification-agent",
                     installFeatures = {
                         install(Tracing) {
-                            val outputPath = Path("./logs/koog_code_modification_trace.log")
+                            val outputPath = Path("$logsDir/koog_code_modification_trace.log")
                             addMessageProcessor(TraceFeatureMessageLogWriter(logger))
                             addMessageProcessor(TraceFeatureMessageFileWriter(
                                 outputPath,
@@ -652,7 +656,7 @@ ${request.systemPrompt?.let { "USER PROMPT:\n$it" } ?: ""}
                     }
 
                     install(Tracing) {
-                        val outputPath = Path("./logs/koog_trace.log")
+                        val outputPath = Path("$logsDir/koog_trace.log")
                         addMessageProcessor(TraceFeatureMessageLogWriter(logger) { it.toString().take(200) })
                         addMessageProcessor(TraceFeatureMessageFileWriter(
                             outputPath,
