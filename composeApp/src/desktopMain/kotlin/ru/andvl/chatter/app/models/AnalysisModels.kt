@@ -1,0 +1,122 @@
+package ru.andvl.chatter.app.models
+
+import ru.andvl.chatter.shared.models.github.GithubAnalysisResponse
+
+enum class LLMProvider(
+    val displayName: String,
+    val defaultModel: String,
+    val availableModels: List<String>,
+    val requiresCustomUrl: Boolean = false,
+    val modelMaxContextTokens: Map<String, Long> = emptyMap(),
+    val defaultMaxContextTokens: Long = 100_000L
+) {
+    OPEN_ROUTER(
+        "OpenRouter",
+        "z-ai/glm-4.6",
+        listOf(
+            "z-ai/glm-4.6",
+            "qwen/qwen3-coder",
+            "google/gemini-2.5-flash",
+            "z-ai/glm-4.5-air",
+            "z-ai/glm-4.5-air:free",
+            "deepseek/deepseek-chat-v3-0324:free",
+            "deepseek/deepseek-chat",
+            "openai/gpt-5-nano",
+        ),
+        modelMaxContextTokens = mapOf(
+            "z-ai/glm-4.6" to 100_000L,
+            "qwen/qwen3-coder" to 200_000L,
+            "google/gemini-2.5-flash" to 1_000_000L,
+            "z-ai/glm-4.5-air" to 100_000L,
+            "z-ai/glm-4.5-air:free" to 100_000L,
+            "deepseek/deepseek-chat-v3-0324:free" to 64_000L,
+            "deepseek/deepseek-chat" to 64_000L,
+            "openai/gpt-5-nano" to 50_000L,
+        ),
+        defaultMaxContextTokens = 100_000L
+    ),
+    GOOGLE(
+        "Gemini",
+        "gemini-2.5-flash",
+        listOf(
+            "gemini-2.5-flash"
+        ),
+        modelMaxContextTokens = mapOf(
+            "gemini-2.5-flash" to 1_000_000L
+        ),
+        defaultMaxContextTokens = 1_000_000L
+    ),
+    OLLAMA(
+        "Ollama (Local)",
+        "",
+        emptyList(),
+        requiresCustomUrl = false,
+        defaultMaxContextTokens = 16_000L
+    ),
+    CUSTOM(
+        "Custom",
+        "",
+        emptyList(),
+        requiresCustomUrl = true,
+        defaultMaxContextTokens = 100_000L
+    );
+
+    fun getMaxContextTokens(modelId: String): Long {
+        return modelMaxContextTokens[modelId] ?: defaultMaxContextTokens
+    }
+
+    companion object {
+        fun fromDisplayName(name: String): LLMProvider =
+            entries.find { it.displayName == name } ?: OPEN_ROUTER
+    }
+}
+
+data class AnalysisConfig(
+    val userInput: String,
+    val apiKey: String,
+    val llmProvider: LLMProvider,
+    val selectedModel: String,
+    val customBaseUrl: String? = null,
+    val customModel: String? = null,
+    val maxContextTokens: Long,
+    val fixingMaxContextTokens: Long,
+    val useMainModelForFixing: Boolean = true,
+    val fixingModel: String,
+    val attachGoogleSheets: Boolean = false,
+    val googleSheetsUrl: String = "",
+    val forceSkipDocker: Boolean = true,
+    val enableEmbeddings: Boolean = false
+)
+
+data class AnalysisUiState(
+    val userInput: String = "",
+    val apiKey: String = "",
+    val llmProvider: LLMProvider = LLMProvider.OPEN_ROUTER,
+    val selectedModel: String = LLMProvider.OPEN_ROUTER.defaultModel,
+    val customBaseUrl: String = "",
+    val customModel: String = "",
+    val customMaxContextTokens: Long = 128000L,
+    val customFixingMaxContextTokens: Long = 128000L,
+    val useMainModelForFixing: Boolean = true,
+    val fixingModel: String = LLMProvider.OPEN_ROUTER.defaultModel,
+    val attachGoogleSheets: Boolean = false,
+    val googleSheetsUrl: String = "",
+    val forceSkipDocker: Boolean = true,
+    val enableEmbeddings: Boolean = false,
+    val isLoading: Boolean = false,
+    val analysisResult: GithubAnalysisResponse? = null,
+    val error: String? = null,
+    val analysisProgress: Int = 0,
+    val currentStep: Int = 0,
+    val totalSteps: Int = 6,
+    val currentStepName: String = "",
+    val recentEvents: List<String> = emptyList(),
+    val currentEventText: String? = null,
+    val availableProviders: List<LLMProvider> = listOf(
+        LLMProvider.OPEN_ROUTER,
+        LLMProvider.GOOGLE,
+        LLMProvider.CUSTOM
+    ),
+    val ollamaModels: List<String> = emptyList(),
+    val isOllamaAvailable: Boolean = false
+)
